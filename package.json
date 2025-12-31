@@ -1,0 +1,52 @@
+{
+  "name": "ccmq-survey-app",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "electron/main.js",
+  "description": "Ung dung khao sat CCMQ Offline",
+  "author": "Nguyen Duy Phuoc Sang",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "electron:dev": "concurrently -k \"cross-env BROWSER=none npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "lucide-react": "^0.344.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.64",
+    "@types/react-dom": "^18.2.21",
+    "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5.4.2",
+    "vite": "^5.1.5",
+    "electron": "^29.1.0",
+    "electron-builder": "^24.13.3",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.ccmq.survey",
+    "productName": "CCMQ Survey Tool",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/favicon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
