@@ -3,7 +3,7 @@ import { SurveyData, UserProfile, ClinicalData, ASScores } from '../types';
 import { exportToCSVs, getGoogleScriptUrl, saveRecord } from '../services/storageService';
 import { calculateASScores } from '../services/scoreService';
 import { Button } from './Button';
-import { Download, RotateCcw, FileText, CloudUpload, CheckCircle, Activity, AlertCircle, Database, Save, XCircle, UserPlus } from 'lucide-react';
+import { Download, RotateCcw, FileText, UploadCloud, CheckCircle, Activity, AlertCircle, Database, Save, XCircle, UserPlus } from 'lucide-react';
 
 interface ResultsViewProps {
   data: SurveyData;
