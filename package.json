@@ -6,12 +6,15 @@
   "main": "electron/main.js",
   "description": "Ung dung khao sat CCMQ Offline",
   "author": "Nguyen Duy Phuoc Sang",
+  "homepage": "https://<USERNAME_CUA_BAN>.github.io/<TEN_REPOSITORY>",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "electron:dev": "concurrently -k \"cross-env BROWSER=none npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run build && electron-builder"
+    "electron:build": "npm run build && electron-builder",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist"
   },
   "dependencies": {
     "lucide-react": "^0.344.0",
@@ -28,7 +31,8 @@
     "electron-builder": "^24.13.3",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
-    "wait-on": "^7.2.0"
+    "wait-on": "^7.2.0",
+    "gh-pages": "^6.1.1"
   },
   "build": {
     "appId": "com.ccmq.survey",
