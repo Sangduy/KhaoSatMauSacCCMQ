@@ -285,7 +285,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
                   </>
                 ) : (
                   <>
-                    <UploadCloud Uplo={14} /> Lưu lên Drive
+                    <UploadCloud size={14} /> Lưu lên Drive
                   </>
                 )}
               </button>
