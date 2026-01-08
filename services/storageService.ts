@@ -498,3 +498,28 @@ export const exportToCSVs = (profile: UserProfile, surveyData: SurveyData, asSco
     downloadCSV(`${baseFilename}_LamSang.csv`, clinicalContent);
   }, 400);
 };
+// Thêm hàm này vào services/storageService.ts
+
+export const syncConsentToCloud = async (fullName: string, scriptUrl: string) => {
+  try {
+    const payload = {
+      action: 'save_consent', // Báo cho Script biết đây là lưu đồng thuận
+      id: Date.now().toString(),
+      timestamp: new Date().toISOString(),
+      fullName: fullName
+    };
+
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+    });
+
+    const resJson = await response.json();
+    return resJson.status === 'success';
+  } catch (error) {
+    console.error("Lỗi gửi đồng thuận:", error);
+    return false;
+  }
+};
