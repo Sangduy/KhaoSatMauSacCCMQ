@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Lock, Save, Database, Trash2, Download, RefreshCw, X, Cloud, FileCheck, ChevronLeft, ChevronRight, Zap, Eye, ArrowLeft, Search, Upload, CheckCircle, AlertCircle, CloudLightning, FileText, Info, HardDriveUpload, Globe } from 'lucide-react';
+import { Settings, Lock, Save, Database, Trash2, Download, RefreshCw, X, Cloud, FileCheck, ChevronLeft, ChevronRight, Zap, Eye, ArrowLeft, Search, UploadCloud, CheckCircle, AlertCircle, CloudLightning, FileText, Info, HardDriveUpload, Globe } from 'lucide-react';
 import { 
   getCurrentSequenceCounter, 
   setSequenceCounter, 
@@ -745,7 +745,7 @@ export const AdminPanel: React.FC = () => {
                                   </>
                                 ) : (
                                   <>
-                                    <Upload size={16} /> {dataSource === 'cloud' ? 'Cập nhật Cloud' : 'Lưu Cloud'}
+                                    <UploadCloud size={16} /> {dataSource === 'cloud' ? 'Cập nhật Cloud' : 'Lưu Cloud'}
                                   </>
                                 )}
                               </button>

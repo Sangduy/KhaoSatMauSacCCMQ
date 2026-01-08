@@ -3,7 +3,7 @@ import { SurveyData, UserProfile, ASScores, ClinicalData } from '../types';
 import { exportToCSVs, getGoogleScriptUrl, saveRecord, syncRecordToCloud } from '../services/storageService';
 import { calculateASScores } from '../services/scoreService';
 import { Button } from './Button';
-import { Download, Upload, CheckCircle, Activity, AlertCircle, Database, XCircle, UserPlus, X, CloudLightning } from 'lucide-react';
+import { Download, UploadCloud, CheckCircle, Activity, AlertCircle, Database, XCircle, UserPlus, X, CloudLightning } from 'lucide-react';
 
 interface ResultsViewProps {
   data: SurveyData;
@@ -260,7 +260,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
               onClick={handleRetrySync} 
               className="bg-red-600 hover:bg-red-700 shadow-lg shadow-red-200 min-w-[200px] py-3 animate-pulse"
             >
-              <Upload size={20} />
+              <UploadCloud size={20} />
               Gửi lại Kết quả
             </Button>
         )}
