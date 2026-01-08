@@ -1,3 +1,4 @@
+
 export interface UserProfile {
   sequenceNumber: number; // Số thứ tự đếm
   patientCode: string; // Mã bệnh nhân (Viết tắt + STT)
@@ -29,11 +30,18 @@ export enum AppStep {
   RESULTS = 'RESULTS'  // Bước 4: Kết quả
 }
 
+// Cấu trúc dữ liệu cho một giai đoạn lâm sàng
+export interface ClinicalPhaseData {
+  file: string;
+  ei: string;
+  mi: string;
+}
+
 // Dữ liệu chỉ số lâm sàng (Admin nhập)
 export interface ClinicalData {
-  pre: { file: string };
-  postImmediate: { file: string };
-  post10Min: { file: string };
+  pre: ClinicalPhaseData;
+  postImmediate: ClinicalPhaseData;
+  post10Min: ClinicalPhaseData;
   cuppingMarkTime: string; // Thời gian mất vết giác
 }
 

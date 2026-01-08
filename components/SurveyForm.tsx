@@ -3,6 +3,7 @@ import { QuestionCard } from './QuestionCard';
 import { Button } from './Button';
 import { SurveyData, AnswerValue } from '../types';
 import { CCMQ_QUESTIONS } from '../constants';
+import { Zap } from 'lucide-react';
 
 interface SurveyFormProps {
   onComplete: (data: SurveyData) => void;
@@ -74,6 +75,27 @@ export const SurveyForm: React.FC<SurveyFormProps> = ({ onComplete }) => {
     }
   };
 
+  // ADMIN FUNCTION: Auto fill for testing
+  const handleAutoFill = () => {
+    if (!confirm("Admin Mode: Bạn có chắc muốn điền ngẫu nhiên TẤT CẢ câu hỏi không?")) return;
+
+    const mockAnswers: SurveyData = {};
+    CCMQ_QUESTIONS.forEach(q => {
+      // Random value between 1 and 5
+      mockAnswers[q.id] = (Math.floor(Math.random() * 5) + 1) as AnswerValue;
+    });
+    
+    setAnswers(mockAnswers);
+    setShowError(false);
+    
+    // Jump to last page
+    setCurrentPage(totalPages - 1);
+    
+    setTimeout(() => {
+        topRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  };
+
   const progress = (Object.keys(answers).length / CCMQ_QUESTIONS.length) * 100;
 
   return (
@@ -128,20 +150,30 @@ export const SurveyForm: React.FC<SurveyFormProps> = ({ onComplete }) => {
       )}
 
       {/* Navigation */}
-      <div className="flex justify-between mt-8 mb-12 p-4 bg-white rounded-xl shadow-sm border border-gray-100 sticky bottom-4 z-20">
+      <div className="flex justify-between items-center mt-8 mb-12 p-4 bg-white rounded-xl shadow-sm border border-gray-100 sticky bottom-4 z-20">
         <Button 
           variant="secondary" 
           onClick={handlePrev} 
           disabled={currentPage === 0}
-          className="w-32"
+          className="w-28"
         >
           Quay lại
         </Button>
+
+        {/* ADMIN BUTTON - VISIBLE ON ALL SCREENS */}
+        <button
+            onClick={handleAutoFill}
+            className="flex items-center gap-1 px-3 py-1.5 text-yellow-600 bg-yellow-50 hover:bg-yellow-100 rounded-md transition-colors text-xs font-medium border border-yellow-200"
+            title="Admin: Tự động điền ngẫu nhiên (Dùng để test)"
+        >
+            <Zap size={14} /> Auto-Fill (Test)
+        </button>
+
         <Button 
           variant="primary" 
           onClick={handleNext} 
           // Removed disabled prop so user can click to trigger validation
-          className="w-32 shadow-lg shadow-blue-200"
+          className="w-28 shadow-lg shadow-blue-200"
         >
           {currentPage === totalPages - 1 ? 'Hoàn tất' : 'Tiếp theo'}
         </Button>

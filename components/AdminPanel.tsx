@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Lock, Save, Database, Trash2, Download, RefreshCw, X, Cloud, FileCheck, ChevronLeft, ChevronRight, Zap, Eye, ArrowLeft, Search } from 'lucide-react';
+import { Settings, Lock, Save, Database, Trash2, Download, RefreshCw, X, Cloud, FileCheck, ChevronLeft, ChevronRight, Zap, Eye, ArrowLeft, Search, Upload, CheckCircle, AlertCircle, CloudLightning, FileText, Info, HardDriveUpload, Globe } from 'lucide-react';
 import { 
   getCurrentSequenceCounter, 
   setSequenceCounter, 
@@ -11,11 +11,15 @@ import {
   exportConsentsToCSV,
   getGoogleScriptUrl,
   setGoogleScriptUrl,
-  generateTestData
+  generateTestData,
+  syncRecordToCloud,
+  backupDataToCloud,
+  saveRecord,
+  fetchRecordsFromCloud // New Function
 } from '../services/storageService';
 import { calculateASScores, getHighestScores } from '../services/scoreService';
 import { Button } from './Button';
-import { SurveyRecord } from '../types';
+import { SurveyRecord, ClinicalData } from '../types';
 import { CCMQ_QUESTIONS, ANSWER_OPTIONS } from '../constants';
 
 const RECORDS_PER_PAGE = 10;
@@ -26,10 +30,14 @@ export const AdminPanel: React.FC = () => {
   const [password, setPassword] = useState('');
   const [activeTab, setActiveTab] = useState<'settings' | 'database'>('settings');
   
+  // Data Source Mode: 'local' (LocalStorage) or 'cloud' (Google Sheet)
+  const [dataSource, setDataSource] = useState<'local' | 'cloud'>('local');
+
   // Settings State
   const [currentCounter, setCurrentCounter] = useState(0);
   const [newCounter, setNewCounter] = useState('');
   const [scriptUrl, setScriptUrl] = useState('');
+  const [isBackingUp, setIsBackingUp] = useState(false);
 
   // Database State
   const [records, setRecords] = useState<SurveyRecord[]>([]);
@@ -37,22 +45,82 @@ export const AdminPanel: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRecord, setSelectedRecord] = useState<SurveyRecord | null>(null);
 
+  // Edit Clinical Data State
+  const [editingClinicalData, setEditingClinicalData] = useState<ClinicalData | null>(null);
+
+  // Sync State
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [isLoadingCloud, setIsLoadingCloud] = useState(false); // Loading state for Fetching
+
+  // Notification State
+  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
   const handleOpen = () => {
     setIsOpen(true);
     refreshData();
   };
 
-  const refreshData = () => {
+  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => {
+      setNotification(null);
+    }, 3000);
+  };
+
+  const refreshData = async () => {
     setCurrentCounter(getCurrentSequenceCounter());
     setNewCounter(getCurrentSequenceCounter().toString());
-    setScriptUrl(getGoogleScriptUrl());
-    const allRecords = getRecords().sort((a, b) => b.profile.sequenceNumber - a.profile.sequenceNumber);
-    setRecords(allRecords);
+    const url = getGoogleScriptUrl();
+    setScriptUrl(url);
+
+    if (dataSource === 'local') {
+        const allRecords = getRecords().sort((a, b) => b.profile.sequenceNumber - a.profile.sequenceNumber);
+        setRecords(allRecords);
+    } else {
+        // Cloud Mode: Fetch from GAS
+        if (!url) {
+            showNotification("Chưa cấu hình Google Script URL!", 'error');
+            setDataSource('local');
+            return;
+        }
+        setIsLoadingCloud(true);
+        const result = await fetchRecordsFromCloud(url);
+        setIsLoadingCloud(false);
+        
+        if (result.success && result.data) {
+            // Sort by timestamp descending
+            const sorted = result.data.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            setRecords(sorted);
+        } else {
+            showNotification(`Lỗi tải dữ liệu Cloud: ${result.message}`, 'error');
+            setDataSource('local'); // Revert on error
+        }
+    }
     
-    // Reset pages
-    const maxPage = Math.max(1, Math.ceil(allRecords.length / RECORDS_PER_PAGE));
-    if (currentPage > maxPage) setCurrentPage(maxPage);
+    // Reset selection and paging
+    setSelectedRecord(null);
+    setCurrentPage(1);
   };
+
+  // Switch Data Source Effect
+  useEffect(() => {
+      if (isOpen && isAuthenticated) {
+          refreshData();
+      }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataSource]);
+
+  // Khi chọn 1 record, load data lâm sàng của nó vào state để edit
+  useEffect(() => {
+    setSyncStatus('idle');
+    if (selectedRecord) {
+      // Clone để tránh mutate trực tiếp
+      setEditingClinicalData(JSON.parse(JSON.stringify(selectedRecord.clinicalData)));
+    } else {
+      setEditingClinicalData(null);
+    }
+  }, [selectedRecord]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,26 +140,61 @@ export const AdminPanel: React.FC = () => {
       setCurrentCounter(val);
     }
     setGoogleScriptUrl(scriptUrl.trim());
-    alert('Đã cập nhật cấu hình!');
+    showNotification('Đã lưu cấu hình hệ thống thành công!');
+  };
+
+  // Handle Backup (Upload CSV to Drive)
+  const handleBackupToDrive = async () => {
+    const url = getGoogleScriptUrl();
+    if (!url) {
+      alert("Chưa cấu hình Google Script URL!");
+      return;
+    }
+    
+    if (getRecords().length === 0) {
+      alert("Chưa có dữ liệu để sao lưu!");
+      return;
+    }
+
+    if (!confirm("Bạn có chắc muốn tải lên file CSV chứa toàn bộ dữ liệu lên Google Drive không?")) {
+      return;
+    }
+
+    setIsBackingUp(true);
+    const result = await backupDataToCloud(url);
+    setIsBackingUp(false);
+
+    if (result.success) {
+      showNotification("Đã sao lưu file CSV lên Drive thành công!", 'success');
+    } else {
+      showNotification(`Lỗi sao lưu: ${result.message}`, 'error');
+    }
   };
 
   const handleDeleteRecord = (id: string, name: string) => {
+    if (dataSource === 'cloud') {
+        alert("Hiện tại chưa hỗ trợ xóa trực tiếp trên Cloud từ App. Vui lòng vào Google Sheet để xóa dòng tương ứng.");
+        return;
+    }
     if (confirm(`Bạn có chắc chắn muốn xóa dữ liệu của bệnh nhân: ${name}?`)) {
       deleteRecord(id);
       refreshData();
       if (selectedRecord?.id === id) {
         setSelectedRecord(null);
       }
+      showNotification(`Đã xóa hồ sơ của ${name}`);
     }
   };
 
   const handleClearAll = () => {
-    const confirmText = prompt("Hành động này sẽ XÓA TOÀN BỘ dữ liệu (bao gồm cả danh sách đồng thuận). Nhập 'XOA' để xác nhận:");
+    if (dataSource === 'cloud') return;
+    const confirmText = prompt("Hành động này sẽ XÓA TOÀN BỘ dữ liệu trên MÁY NÀY. Nhập 'XOA' để xác nhận:");
     if (confirmText === 'XOA') {
       clearAllRecords();
       setCurrentPage(1);
       setSelectedRecord(null);
       refreshData();
+      showNotification('Đã xóa toàn bộ cơ sở dữ liệu local!', 'success');
     }
   };
 
@@ -100,7 +203,138 @@ export const AdminPanel: React.FC = () => {
         generateTestData();
         refreshData();
         setSelectedRecord(null);
-        alert("Đã tạo 10 hồ sơ mẫu thành công!");
+        showNotification("Đã tạo 10 hồ sơ mẫu thành công!");
+    }
+  };
+
+  // Sync single record (Also used for Updating Cloud Record)
+  const handleSyncToCloud = async () => {
+    if (!selectedRecord) return;
+    const url = getGoogleScriptUrl();
+    if (!url) {
+      alert("Chưa cấu hình Google Script URL trong tab Cấu hình.");
+      return;
+    }
+
+    setSyncStatus('syncing');
+
+    // Ưu tiên dùng dữ liệu đang edit (nếu có)
+    const currentClinicalData = editingClinicalData || selectedRecord.clinicalData;
+
+    const recordToSync = { 
+      ...selectedRecord, 
+      clinicalData: currentClinicalData 
+    };
+    
+    if (!recordToSync.asScores) {
+      recordToSync.asScores = calculateASScores(recordToSync.surveyData);
+    }
+
+    // Nếu đang ở local mode, lưu local để backup
+    if (dataSource === 'local') {
+        saveRecord(recordToSync.profile, recordToSync.surveyData, currentClinicalData, recordToSync.asScores);
+    }
+
+    // Send to Cloud (Script handles both Insert and Update based on ID)
+    const result = await syncRecordToCloud(recordToSync, url);
+
+    if (result.success) {
+      setSyncStatus('success');
+      // Nếu đang ở cloud mode, refresh lại để thấy data mới nhất
+      if (dataSource === 'cloud') {
+          // Delay xíu để sheet kịp update
+          setTimeout(refreshData, 1000); 
+      } else {
+          refreshData();
+      }
+      showNotification('Cập nhật lên Google Sheets thành công!');
+    } else {
+      setSyncStatus('error');
+      showNotification(`Lỗi đồng bộ: ${result.message}`, 'error');
+    }
+  };
+
+  // Sync ALL records
+  const handleSyncAll = async () => {
+    const url = getGoogleScriptUrl();
+    if (!url) {
+      alert("Chưa cấu hình Google Script URL trong tab Cấu hình.");
+      return;
+    }
+
+    if (!confirm(`Bạn có chắc muốn đồng bộ ${records.length} hồ sơ lên Cloud? Việc này có thể mất vài phút.`)) {
+      return;
+    }
+
+    setIsSyncingAll(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const rec of records) {
+      const recordToSync = { ...rec };
+      if (!recordToSync.asScores) {
+        recordToSync.asScores = calculateASScores(recordToSync.surveyData);
+      }
+
+      const result = await syncRecordToCloud(recordToSync, url);
+      if (result.success) {
+        successCount++;
+      } else {
+        failCount++;
+        console.error(`Failed to sync ${rec.profile.patientCode}: ${result.message}`);
+      }
+      
+      // Add small delay
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    setIsSyncingAll(false);
+    
+    if (failCount === 0) {
+      showNotification(`Đồng bộ hoàn tất ${successCount} hồ sơ!`, 'success');
+    } else {
+      showNotification(`Đồng bộ: ${successCount} thành công, ${failCount} thất bại`, 'error');
+    }
+  };
+
+  // Handle Clinical Data Input Change
+  const handleClinicalInputChange = (
+    phase: 'pre' | 'postImmediate' | 'post10Min', 
+    field: 'file' | 'ei' | 'mi', 
+    value: string
+  ) => {
+    if (!editingClinicalData) return;
+    setEditingClinicalData(prev => prev ? ({
+      ...prev,
+      [phase]: {
+        ...prev[phase],
+        [field]: value
+      }
+    }) : null);
+  };
+
+  // Save Clinical Data Only
+  const handleSaveClinicalData = async () => {
+    if (selectedRecord && editingClinicalData) {
+      const updatedRecord = { ...selectedRecord, clinicalData: editingClinicalData };
+      
+      if (dataSource === 'local') {
+          // Save to local storage
+          saveRecord(
+            updatedRecord.profile, 
+            updatedRecord.surveyData, 
+            editingClinicalData, 
+            updatedRecord.asScores
+          );
+          refreshData(); // Refresh UI
+          showNotification("Đã lưu thông tin lâm sàng (Local)!");
+      } else {
+          // Cloud Mode: Direct Sync Update
+          if(confirm("Bạn đang ở chế độ Cloud. Hành động này sẽ gửi cập nhật trực tiếp lên Google Sheets. Tiếp tục?")) {
+             // Use syncRecordToCloud logic to update
+             handleSyncToCloud();
+          }
+      }
     }
   };
 
@@ -134,6 +368,7 @@ export const AdminPanel: React.FC = () => {
   };
 
   const inputClasses = "w-full px-4 py-2 border border-gray-400 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
+  const clinicalInputClasses = "bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block w-full p-2";
 
   if (!isOpen) {
     return (
@@ -149,7 +384,7 @@ export const AdminPanel: React.FC = () => {
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className={`bg-white rounded-xl shadow-2xl w-full ${isAuthenticated ? 'max-w-6xl h-[90vh]' : 'max-w-md'} flex flex-col overflow-hidden transition-all duration-300`}>
+      <div className={`bg-white rounded-xl shadow-2xl w-full ${isAuthenticated ? 'max-w-6xl h-[90vh]' : 'max-w-md'} flex flex-col overflow-hidden transition-all duration-300 relative`}>
         {/* Header */}
         <div className="bg-gray-900 px-6 py-4 flex justify-between items-center text-white shrink-0 shadow-md">
           <h3 className="font-semibold flex items-center gap-2 text-lg">
@@ -165,7 +400,7 @@ export const AdminPanel: React.FC = () => {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden p-0 bg-gray-50 flex flex-col">
+        <div className="flex-1 overflow-hidden p-0 bg-gray-50 flex flex-col relative">
           {!isAuthenticated ? (
             <div className="p-8 flex-1 flex items-center">
               <form onSubmit={handleLogin} className="space-y-6 w-full">
@@ -193,29 +428,57 @@ export const AdminPanel: React.FC = () => {
               </form>
             </div>
           ) : (
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col h-full relative">
               {/* Tabs */}
-              <div className="flex border-b border-gray-200 bg-white shrink-0">
-                <button
-                  onClick={() => setActiveTab('settings')}
-                  className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-all border-b-2 ${
-                    activeTab === 'settings' 
-                      ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  <Settings size={18} /> Cấu hình
-                </button>
-                <button
-                  onClick={() => { setActiveTab('database'); refreshData(); }}
-                  className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-all border-b-2 ${
-                    activeTab === 'database' 
-                      ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  <Database size={18} /> Cơ sở dữ liệu ({records.length})
-                </button>
+              <div className="flex border-b border-gray-200 bg-white shrink-0 items-center justify-between pr-4">
+                <div className="flex">
+                    <button
+                    onClick={() => setActiveTab('settings')}
+                    className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-all border-b-2 ${
+                        activeTab === 'settings' 
+                        ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    }`}
+                    >
+                    <Settings size={18} /> Cấu hình
+                    </button>
+                    <button
+                    onClick={() => { setActiveTab('database'); refreshData(); }}
+                    className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-all border-b-2 ${
+                        activeTab === 'database' 
+                        ? 'border-blue-600 text-blue-600 bg-blue-50/50' 
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    }`}
+                    >
+                    <Database size={18} /> Dữ liệu ({records.length})
+                    </button>
+                </div>
+
+                {/* Data Source Toggle Switch */}
+                {activeTab === 'database' && (
+                    <div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200">
+                        <button
+                            onClick={() => setDataSource('local')}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-2 transition-all ${
+                                dataSource === 'local' 
+                                ? 'bg-white text-gray-800 shadow-sm border border-gray-200' 
+                                : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                        >
+                            <Database size={14} /> Máy này (Local)
+                        </button>
+                        <button
+                            onClick={() => setDataSource('cloud')}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-2 transition-all ${
+                                dataSource === 'cloud' 
+                                ? 'bg-blue-600 text-white shadow-sm' 
+                                : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                        >
+                            <Cloud size={14} /> Hệ thống (Cloud)
+                        </button>
+                    </div>
+                )}
               </div>
 
               {/* Tab Content */}
@@ -254,13 +517,29 @@ export const AdminPanel: React.FC = () => {
                             <Cloud size={18} className="text-blue-500" />
                             Google Apps Script Web App URL
                           </label>
-                          <input
-                            type="text"
-                            value={scriptUrl}
-                            onChange={(e) => setScriptUrl(e.target.value)}
-                            placeholder="https://script.google.com/macros/s/..."
-                            className={`${inputClasses} text-sm font-mono text-gray-600`}
-                          />
+                          <div className="flex gap-2">
+                             <input
+                              type="text"
+                              value={scriptUrl}
+                              onChange={(e) => setScriptUrl(e.target.value)}
+                              placeholder="https://script.google.com/macros/s/..."
+                              className={`${inputClasses} text-sm font-mono text-gray-600 flex-1`}
+                            />
+                            <Button 
+                              type="button" 
+                              onClick={handleBackupToDrive}
+                              disabled={isBackingUp}
+                              className="bg-green-600 hover:bg-green-700 shrink-0 text-xs px-3"
+                              title="Tải toàn bộ dữ liệu hiện có lên Google Drive dưới dạng file CSV"
+                            >
+                              {isBackingUp ? (
+                                <RefreshCw size={16} className="animate-spin" />
+                              ) : (
+                                <HardDriveUpload size={16} />
+                              )}
+                              {isBackingUp ? 'Đang lưu...' : 'Lưu CSV lên Drive'}
+                            </Button>
+                          </div>
                           <p className="text-xs text-gray-500 mt-2">
                             Dùng để đồng bộ dữ liệu lên Google Sheets. Để trống nếu chỉ dùng Offline.
                           </p>
@@ -279,7 +558,7 @@ export const AdminPanel: React.FC = () => {
 
                 {activeTab === 'database' && (
                   <div className="flex h-full">
-                    {/* LEFT COLUMN: LIST VIEW */}
+                    {/* LEFT COLUMN: LIST VIEW & SEARCH */}
                     <div className={`${selectedRecord ? 'w-1/3 hidden md:flex' : 'w-full'} flex-col border-r border-gray-200 bg-white transition-all duration-300`}>
                       {/* Toolbar */}
                       <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
@@ -287,37 +566,64 @@ export const AdminPanel: React.FC = () => {
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                             <input 
                               type="text" 
-                              placeholder="Tìm tên hoặc mã BN..." 
+                              placeholder="Tra cứu: Tên hoặc Mã BN..." 
                               className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                               value={searchTerm}
                               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                              autoFocus
                             />
                          </div>
                          <div className="flex flex-wrap gap-2">
-                           <Button variant="secondary" onClick={refreshData} className="!py-1.5 !px-3 text-xs flex-1 justify-center">
-                            <RefreshCw size={14} /> Làm mới
-                           </Button>
-                           <Button variant="primary" onClick={exportConsentsToCSV} className="!py-1.5 !px-3 text-xs bg-purple-600 hover:bg-purple-700 border-purple-600 flex-1 justify-center">
-                            <FileCheck size={14} /> DS Đồng thuận
-                           </Button>
-                           <Button variant="primary" onClick={exportAllRecordsToCSV} className="!py-1.5 !px-3 text-xs bg-green-600 hover:bg-green-700 border-green-600 flex-1 justify-center">
-                              <Download size={14} /> Tải DL Tổng
+                           {/* Sync All Button - Only available in Local Mode */}
+                           {dataSource === 'local' && (
+                               <Button 
+                                  variant="primary" 
+                                  onClick={handleSyncAll} 
+                                  disabled={isSyncingAll}
+                                  className="!py-1.5 !px-3 text-xs bg-blue-600 hover:bg-blue-700 border-blue-600 flex-1 justify-center whitespace-nowrap"
+                               >
+                                {isSyncingAll ? <RefreshCw size={14} className="animate-spin" /> : <CloudLightning size={14} />} 
+                                {isSyncingAll ? 'Đang gửi...' : 'Đẩy Local -> Cloud'}
+                               </Button>
+                           )}
+                           
+                           {/* Export Button - Available in Both */}
+                           <Button variant="primary" onClick={exportAllRecordsToCSV} className="!py-1.5 !px-3 text-xs bg-green-600 hover:bg-green-700 border-green-600 flex-1 justify-center whitespace-nowrap">
+                              <Download size={14} /> Tải CSV Tổng
                             </Button>
                          </div>
-                         <div className="flex gap-2">
-                            <Button variant="secondary" onClick={handleGenerateData} className="!py-1.5 !px-3 text-xs bg-yellow-500 text-white hover:bg-yellow-600 border-yellow-500 flex-1 justify-center">
-                              <Zap size={14} /> Fake Data
-                            </Button>
-                             <Button variant="outline" onClick={handleClearAll} className="!py-1.5 !px-3 text-xs text-red-600 border-red-600 hover:bg-red-50 flex-1 justify-center">
-                              <Trash2 size={14} /> Xóa tất cả
-                            </Button>
+                         
+                         {dataSource === 'local' ? (
+                            <div className="flex gap-2">
+                                <Button variant="secondary" onClick={handleGenerateData} className="!py-1.5 !px-3 text-xs bg-yellow-500 text-white hover:bg-yellow-600 border-yellow-500 flex-1 justify-center">
+                                <Zap size={14} /> Fake Data
+                                </Button>
+                                <Button variant="outline" onClick={handleClearAll} className="!py-1.5 !px-3 text-xs text-red-600 border-red-600 hover:bg-red-50 flex-1 justify-center">
+                                <Trash2 size={14} /> Xóa Local
+                                </Button>
+                            </div>
+                         ) : (
+                             <div className="flex gap-2">
+                                <Button variant="secondary" onClick={refreshData} className="!py-1.5 !px-3 text-xs bg-blue-500 text-white hover:bg-blue-600 border-blue-500 flex-1 justify-center">
+                                    {isLoadingCloud ? <RefreshCw size={14} className="animate-spin" /> : <Globe size={14} />} 
+                                    {isLoadingCloud ? 'Đang tải...' : 'Làm mới dữ liệu Cloud'}
+                                </Button>
+                             </div>
+                         )}
+
+                         {/* Status Indicator */}
+                         <div className={`text-xs text-center py-1 rounded ${dataSource === 'local' ? 'bg-gray-100 text-gray-500' : 'bg-blue-50 text-blue-600'}`}>
+                             {dataSource === 'local' ? 'Đang xem dữ liệu lưu trên máy này' : 'Đang xem dữ liệu tập trung từ Google Sheets'}
                          </div>
+
                       </div>
 
                       {/* List */}
                       <div className="flex-1 overflow-y-auto">
                         {paginatedRecords.length === 0 ? (
-                           <div className="p-8 text-center text-gray-500 text-sm">Không tìm thấy dữ liệu.</div>
+                           <div className="p-8 text-center text-gray-500 text-sm">
+                               {isLoadingCloud ? 'Đang kết nối tới Google Sheets...' : 'Không tìm thấy dữ liệu.'}
+                           </div>
                         ) : (
                           <div className="divide-y divide-gray-100">
                             {paginatedRecords.map(rec => (
@@ -328,9 +634,24 @@ export const AdminPanel: React.FC = () => {
                               >
                                 <div className="flex justify-between items-start mb-1">
                                   <span className="font-bold text-gray-800 text-sm">{rec.profile.fullName}</span>
-                                  <span className="text-xs font-mono bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">
-                                    {rec.profile.patientCode || `#${rec.profile.sequenceNumber}`}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-mono bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">
+                                      {rec.profile.patientCode || `#${rec.profile.sequenceNumber}`}
+                                    </span>
+                                    {/* Chỉ cho xóa ở Local mode */}
+                                    {dataSource === 'local' && (
+                                        <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteRecord(rec.id, rec.profile.fullName);
+                                        }}
+                                        className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
+                                        title="Xóa bản ghi"
+                                        >
+                                        <Trash2 size={14} />
+                                        </button>
+                                    )}
+                                  </div>
                                 </div>
                                 <div className="text-xs text-gray-500 mb-2 flex items-center gap-2">
                                   <span>{rec.profile.yearOfBirth} - {rec.profile.gender}</span>
@@ -352,11 +673,32 @@ export const AdminPanel: React.FC = () => {
                       </div>
 
                       {/* Pagination */}
-                      {filteredRecords.length > RECORDS_PER_PAGE && (
-                        <div className="p-3 bg-white border-t border-gray-200 flex items-center justify-between">
-                          <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className="p-1 rounded hover:bg-gray-100 disabled:opacity-50"><ChevronLeft size={16}/></button>
-                          <span className="text-xs text-gray-600">Trang {currentPage}/{totalPages}</span>
-                          <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages} className="p-1 rounded hover:bg-gray-100 disabled:opacity-50"><ChevronRight size={16}/></button>
+                      {filteredRecords.length > 0 && (
+                        <div className="p-3 bg-white border-t border-gray-200 flex items-center justify-between shrink-0 shadow-sm z-10">
+                          <button 
+                            onClick={() => goToPage(currentPage - 1)} 
+                            disabled={currentPage === 1} 
+                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white transition-colors text-gray-600"
+                            title="Trang trước"
+                          >
+                            <ChevronLeft size={20}/>
+                          </button>
+                          
+                          <div className="flex flex-col items-center">
+                            <span className="text-xs font-bold text-gray-700">Trang {currentPage} / {totalPages}</span>
+                            <span className="text-[10px] text-gray-500 mt-0.5">
+                               {filteredRecords.length > 0 ? (currentPage - 1) * RECORDS_PER_PAGE + 1 : 0} - {Math.min(currentPage * RECORDS_PER_PAGE, filteredRecords.length)} trong tổng số {filteredRecords.length}
+                            </span>
+                          </div>
+
+                          <button 
+                            onClick={() => goToPage(currentPage + 1)} 
+                            disabled={currentPage === totalPages} 
+                            className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white transition-colors text-gray-600"
+                            title="Trang sau"
+                          >
+                            <ChevronRight size={20}/>
+                          </button>
                         </div>
                       )}
                     </div>
@@ -377,6 +719,37 @@ export const AdminPanel: React.FC = () => {
                               </div>
                             </div>
                             <div className="flex gap-2">
+                              {/* Cloud Sync Button (Single) */}
+                              <button
+                                onClick={handleSyncToCloud}
+                                disabled={syncStatus === 'syncing' || syncStatus === 'success'}
+                                className={`
+                                  flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border
+                                  ${syncStatus === 'success' ? 'bg-blue-600 text-white border-blue-600' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'}
+                                  ${syncStatus === 'error' ? 'bg-red-50 text-red-700 border-red-200' : ''}
+                                  disabled:opacity-80 disabled:cursor-not-allowed
+                                `}
+                              >
+                                {syncStatus === 'syncing' ? (
+                                  <>
+                                    <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                                    Đang gửi...
+                                  </>
+                                ) : syncStatus === 'success' ? (
+                                  <>
+                                    <CheckCircle size={16} /> Đã cập nhật
+                                  </>
+                                ) : syncStatus === 'error' ? (
+                                  <>
+                                    <AlertCircle size={16} /> Lỗi - Gửi lại
+                                  </>
+                                ) : (
+                                  <>
+                                    <Upload size={16} /> {dataSource === 'cloud' ? 'Cập nhật Cloud' : 'Lưu Cloud'}
+                                  </>
+                                )}
+                              </button>
+
                                <button 
                                 onClick={() => {
                                   const scores = selectedRecord.asScores || calculateASScores(selectedRecord.surveyData);
@@ -386,18 +759,155 @@ export const AdminPanel: React.FC = () => {
                               >
                                 <Download size={16} /> Tải CSV
                               </button>
-                              <button 
-                                onClick={() => handleDeleteRecord(selectedRecord.id, selectedRecord.profile.fullName)}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 border border-red-200 transition-colors text-sm font-medium"
-                              >
-                                <Trash2 size={16} /> Xóa
-                              </button>
+                              {dataSource === 'local' && (
+                                <button 
+                                    onClick={() => handleDeleteRecord(selectedRecord.id, selectedRecord.profile.fullName)}
+                                    className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 border border-red-200 transition-colors text-sm font-medium"
+                                >
+                                    <Trash2 size={16} /> Xóa
+                                </button>
+                              )}
                             </div>
                           </div>
 
                           {/* Detail Content (Scrollable) */}
                           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                            
+                             {/* SECTION: CLINICAL DATA INPUT */}
+                             {editingClinicalData && (
+                                <div className={`bg-white rounded-lg shadow-sm border overflow-hidden ${dataSource === 'cloud' ? 'border-blue-300 ring-1 ring-blue-200' : 'border-gray-200'}`}>
+                                  <div className={`px-4 py-3 border-b flex justify-between items-center ${dataSource === 'cloud' ? 'bg-blue-50 border-blue-200' : 'bg-gray-100 border-gray-200'}`}>
+                                    <h5 className="font-semibold text-gray-800 flex items-center gap-2">
+                                      <FileText size={16} className={dataSource === 'cloud' ? "text-blue-600" : "text-purple-600"}/> 
+                                      {dataSource === 'cloud' ? 'Cập Nhật Chỉ Số (Sửa trực tiếp trên Cloud)' : 'Phiếu Thu Thập Chỉ Số Lâm Sàng (EI/MI)'}
+                                    </h5>
+                                    <Button 
+                                      onClick={handleSaveClinicalData}
+                                      className={`!py-1 !px-3 text-xs ${dataSource === 'cloud' ? "bg-blue-600 hover:bg-blue-700" : "bg-purple-600 hover:bg-purple-700"}`}
+                                    >
+                                      <Save size={14} /> {dataSource === 'cloud' ? 'Lưu & Đồng bộ' : 'Lưu Chỉ Số'}
+                                    </Button>
+                                  </div>
+                                  <div className="p-4">
+                                     <div className="mb-2 text-xs text-gray-500 italic">* Nhập mã file ảnh và chỉ số EI/MI. Nhấn nút Lưu để cập nhật.</div>
+                                     <table className="min-w-full text-sm text-left text-gray-500 border border-gray-200 rounded-lg">
+                                      <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+                                        <tr>
+                                          <th scope="col" className="px-4 py-2 border-b font-bold w-1/4">Giai đoạn</th>
+                                          <th scope="col" className="px-2 py-2 border-b font-bold">Mã File / Ghi chú</th>
+                                          <th scope="col" className="px-2 py-2 border-b font-bold w-24">Chỉ số EI</th>
+                                          <th scope="col" className="px-2 py-2 border-b font-bold w-24">Chỉ số MI</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {/* Row 1: Pre */}
+                                        <tr className="bg-white border-b hover:bg-gray-50">
+                                          <td className="px-4 py-2 font-medium text-gray-900">Trước khi thực hiện</td>
+                                          <td className="px-2 py-1">
+                                            <input 
+                                              type="text" 
+                                              className={clinicalInputClasses}
+                                              placeholder="File ảnh..."
+                                              value={editingClinicalData.pre.file}
+                                              onChange={(e) => handleClinicalInputChange('pre', 'file', e.target.value)}
+                                            />
+                                          </td>
+                                          <td className="px-2 py-1">
+                                            <input 
+                                              type="text" 
+                                              className={clinicalInputClasses}
+                                              placeholder="EI..."
+                                              value={editingClinicalData.pre.ei}
+                                              onChange={(e) => handleClinicalInputChange('pre', 'ei', e.target.value)}
+                                            />
+                                          </td>
+                                          <td className="px-2 py-1">
+                                            <input 
+                                              type="text" 
+                                              className={clinicalInputClasses}
+                                              placeholder="MI..."
+                                              value={editingClinicalData.pre.mi}
+                                              onChange={(e) => handleClinicalInputChange('pre', 'mi', e.target.value)}
+                                            />
+                                          </td>
+                                        </tr>
+                                        {/* Row 2: Post Immediate */}
+                                        <tr className="bg-white border-b hover:bg-gray-50">
+                                          <td className="px-4 py-2 font-medium text-gray-900">Ngay sau khi thực hiện</td>
+                                          <td className="px-2 py-1">
+                                            <input 
+                                              type="text" 
+                                              className={clinicalInputClasses}
+                                              placeholder="File ảnh..."
+                                              value={editingClinicalData.postImmediate.file}
+                                              onChange={(e) => handleClinicalInputChange('postImmediate', 'file', e.target.value)}
+                                            />
+                                          </td>
+                                          <td className="px-2 py-1">
+                                            <input 
+                                              type="text" 
+                                              className={clinicalInputClasses}
+                                              placeholder="EI..."
+                                              value={editingClinicalData.postImmediate.ei}
+                                              onChange={(e) => handleClinicalInputChange('postImmediate', 'ei', e.target.value)}
+                                            />
+                                          </td>
+                                          <td className="px-2 py-1">
+                                            <input 
+                                              type="text" 
+                                              className={clinicalInputClasses}
+                                              placeholder="MI..."
+                                              value={editingClinicalData.postImmediate.mi}
+                                              onChange={(e) => handleClinicalInputChange('postImmediate', 'mi', e.target.value)}
+                                            />
+                                          </td>
+                                        </tr>
+                                        {/* Row 3: Post 10 Min */}
+                                        <tr className="bg-white hover:bg-gray-50">
+                                          <td className="px-4 py-2 font-medium text-gray-900">Sau khi thực hiện 10 phút</td>
+                                          <td className="px-2 py-1">
+                                            <input 
+                                              type="text" 
+                                              className={clinicalInputClasses}
+                                              placeholder="File ảnh..."
+                                              value={editingClinicalData.post10Min.file}
+                                              onChange={(e) => handleClinicalInputChange('post10Min', 'file', e.target.value)}
+                                            />
+                                          </td>
+                                          <td className="px-2 py-1">
+                                            <input 
+                                              type="text" 
+                                              className={clinicalInputClasses}
+                                              placeholder="EI..."
+                                              value={editingClinicalData.post10Min.ei}
+                                              onChange={(e) => handleClinicalInputChange('post10Min', 'ei', e.target.value)}
+                                            />
+                                          </td>
+                                          <td className="px-2 py-1">
+                                            <input 
+                                              type="text" 
+                                              className={clinicalInputClasses}
+                                              placeholder="MI..."
+                                              value={editingClinicalData.post10Min.mi}
+                                              onChange={(e) => handleClinicalInputChange('post10Min', 'mi', e.target.value)}
+                                            />
+                                          </td>
+                                        </tr>
+                                      </tbody>
+                                    </table>
+                                    <div className="mt-3 flex items-center gap-2">
+                                       <label className="text-sm font-medium text-gray-900 whitespace-nowrap">TG Mất vết giác:</label>
+                                       <input 
+                                          type="text" 
+                                          className={clinicalInputClasses}
+                                          placeholder="Ví dụ: 3 ngày, 1 tuần..."
+                                          value={editingClinicalData.cuppingMarkTime}
+                                          onChange={(e) => setEditingClinicalData({...editingClinicalData, cuppingMarkTime: e.target.value})}
+                                        />
+                                    </div>
+                                  </div>
+                                </div>
+                             )}
+
                             {/* Card: AS Scores */}
                             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                               <h5 className="font-semibold text-gray-800 mb-3 border-b pb-2 flex items-center gap-2">
@@ -465,10 +975,24 @@ export const AdminPanel: React.FC = () => {
                             <Database size={32} className="text-gray-400" />
                           </div>
                           <h3 className="text-lg font-medium text-gray-600">Chưa chọn hồ sơ nào</h3>
-                          <p className="text-sm max-w-xs mt-2">Chọn một bệnh nhân từ danh sách bên trái để xem chi tiết câu trả lời và chỉnh sửa dữ liệu.</p>
+                          <p className="text-sm max-w-xs mt-2">Sử dụng ô tìm kiếm bên trái để tra cứu bệnh nhân. <br/>Chọn hồ sơ để nhập chỉ số lâm sàng (EI/MI).</p>
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+
+                {/* Notification Toast */}
+                {notification && (
+                  <div 
+                    className={`
+                      fixed bottom-6 right-6 px-6 py-3 rounded-lg shadow-xl text-white 
+                      flex items-center gap-3 z-[60] animate-in slide-in-from-bottom-5 fade-in duration-300
+                      ${notification.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}
+                    `}
+                  >
+                    {notification.type === 'success' ? <CheckCircle size={24} /> : <AlertCircle size={24} />}
+                    <span className="font-medium">{notification.message}</span>
                   </div>
                 )}
               </div>

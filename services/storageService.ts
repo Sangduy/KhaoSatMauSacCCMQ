@@ -1,12 +1,13 @@
 import { UserProfile, SurveyData, ClinicalData, SurveyRecord, ASScores, ConsentRecord } from '../types';
 import { CCMQ_QUESTIONS } from '../constants';
-// Note: We avoid importing calculateASScores here to prevent circular dependency if scoreService imports storage.
-// Instead, we will mock simple scores or let the UI recalculate.
 
 const SEQUENCE_KEY = 'ccmq_sequence_counter';
 const RECORDS_KEY = 'ccmq_records_db';
-const CONSENTS_KEY = 'ccmq_consents_db'; // New key for independent consents
+const CONSENTS_KEY = 'ccmq_consents_db';
 const SCRIPT_URL_KEY = 'ccmq_google_script_url';
+
+// --- QUAN TRỌNG: URL WEB APP MỚI ĐÃ ĐƯỢC CẬP NHẬT ---
+const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw5t8YpzNx7Qiii_YnZpistJiMhyqpleBwZpAZlyWTQ7tnYQ1fkkPJmCI1UXDDlHlMjEg/exec'; 
 
 // --- HELPER FUNCTIONS ---
 export const getAbbreviation = (name: string): string => {
@@ -22,11 +23,137 @@ export const getAbbreviation = (name: string): string => {
 
 // --- GOOGLE SCRIPT URL CONFIG ---
 export const getGoogleScriptUrl = (): string => {
-  return localStorage.getItem(SCRIPT_URL_KEY) || '';
+  return localStorage.getItem(SCRIPT_URL_KEY) || DEFAULT_SCRIPT_URL;
 };
 
 export const setGoogleScriptUrl = (url: string) => {
   localStorage.setItem(SCRIPT_URL_KEY, url);
+};
+
+// --- CLOUD SYNC LOGIC ---
+
+// Hàm lấy dữ liệu từ Cloud (Dành cho Admin)
+export const fetchRecordsFromCloud = async (scriptUrl: string): Promise<{ success: boolean; data?: SurveyRecord[]; message?: string }> => {
+  try {
+    const payload = {
+      action: 'get_all' // Yêu cầu script trả về toàn bộ dữ liệu
+    };
+
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+    });
+
+    const resText = await response.text();
+    const resJson = JSON.parse(resText);
+
+    if (resJson.status === 'success' && Array.isArray(resJson.data)) {
+      // Map lại dữ liệu để đảm bảo đúng format SurveyRecord
+      // Vì script trả về mảng các JSON object đã được parse từ cột FULL_JSON_DATA
+      const records: SurveyRecord[] = resJson.data.map((item: any) => ({
+        id: item.profile?.patientCode || Date.now().toString(), // Fallback ID
+        timestamp: item.timestamp,
+        profile: item.profile,
+        clinicalData: item.clinicalData,
+        asScores: item.asScores,
+        surveyData: item.surveyData
+      }));
+      
+      return { success: true, data: records };
+    } else {
+      return { success: false, message: resJson.message || "Invalid Data Format" };
+    }
+
+  } catch (error: any) {
+    console.error("Fetch Cloud Error:", error);
+    return { success: false, message: error.message || "Network Error" };
+  }
+};
+
+export const syncRecordToCloud = async (record: SurveyRecord | Omit<SurveyRecord, 'id'>, scriptUrl: string): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const payload = {
+      action: 'save', // Mặc định là save/update
+      profile: record.profile,
+      clinicalData: record.clinicalData,
+      asScores: record.asScores,
+      surveyData: record.surveyData,
+      timestamp: record.timestamp
+    };
+
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const resText = await response.text();
+    
+    try {
+        const resJson = JSON.parse(resText);
+        if (resJson.status === 'success') {
+          return { success: true };
+        } else {
+          return { success: false, message: resJson.message || "Script Error" };
+        }
+    } catch (e) {
+        if (response.ok) {
+           return { success: true };
+        } else {
+           return { success: false, message: "Response Parse Error" };
+        }
+    }
+  } catch (error: any) {
+    return { success: false, message: error.message || "Network Error" };
+  }
+};
+
+export const backupDataToCloud = async (scriptUrl: string): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const csvContent = getAllRecordsCSVContent();
+    if (!csvContent) {
+      return { success: false, message: "Không có dữ liệu để sao lưu" };
+    }
+
+    const filename = `Backup_CCMQ_Full_${new Date().toLocaleDateString('vi-VN').replace(/\//g,'-')}_${Date.now()}.csv`;
+    
+    const payload = {
+      action: 'backup_csv', 
+      filename: filename,
+      content: csvContent,
+      mimeType: 'text/csv'
+    };
+
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const resText = await response.text();
+    
+    try {
+        const resJson = JSON.parse(resText);
+        if (resJson.status === 'success') {
+          return { success: true };
+        } else {
+          return { success: false, message: resJson.message || "Script Error" };
+        }
+    } catch (e) {
+        if (response.ok) return { success: true };
+        return { success: false, message: "Response Parse Error" };
+    }
+  } catch (error: any) {
+    return { success: false, message: error.message || "Network Error" };
+  }
 };
 
 // --- SEQUENCE COUNTER LOGIC ---
@@ -59,7 +186,7 @@ export const setSequenceCounter = (value: number) => {
   }
 };
 
-// --- CONSENT RECORDS LOGIC (SEPARATE FILE) ---
+// --- CONSENT RECORDS LOGIC ---
 
 export const getConsents = (): ConsentRecord[] => {
   try {
@@ -103,7 +230,6 @@ export const saveRecord = (profile: UserProfile, surveyData: SurveyData, clinica
   try {
     const records = getRecords();
     
-    // Check if record with this sequence number already exists to update it
     const existingIndex = records.findIndex(r => r.profile.sequenceNumber === profile.sequenceNumber);
     
     const newRecord: SurveyRecord = {
@@ -116,9 +242,9 @@ export const saveRecord = (profile: UserProfile, surveyData: SurveyData, clinica
     };
 
     if (existingIndex >= 0) {
-      records[existingIndex] = newRecord; // Update
+      records[existingIndex] = newRecord;
     } else {
-      records.push(newRecord); // Insert
+      records.push(newRecord);
     }
 
     localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
@@ -138,7 +264,7 @@ export const deleteRecord = (id: string) => {
 
 export const clearAllRecords = () => {
   localStorage.removeItem(RECORDS_KEY);
-  localStorage.removeItem(CONSENTS_KEY); // Also clear consents when clearing all
+  localStorage.removeItem(CONSENTS_KEY);
 };
 
 // --- MOCK DATA GENERATOR ---
@@ -157,7 +283,6 @@ export const generateTestData = () => {
     const seq = index + 1;
     const abbr = getAbbreviation(name);
     
-    // Mock Profile
     const profile: UserProfile = {
       sequenceNumber: seq,
       patientCode: `${abbr}${seq}`,
@@ -170,26 +295,19 @@ export const generateTestData = () => {
       height: (155 + Math.random() * 25).toFixed(0)
     };
 
-    // Mock Survey Data & Scores (Simulated)
     const surveyData: SurveyData = {};
-    const type = index % 3; // 0: Healthy, 1: Sick 1, 2: Sick 2
+    const type = index % 3; 
     
-    // Fill random data
     CCMQ_QUESTIONS.forEach(q => {
-      // Logic giả lập: 
-      // index 0,3,6,9 (Healthy): Trả lời 1-2 (Tốt)
-      // index 1,4,7 (Sick): Trả lời 4-5 (Xấu)
-      // index 2,5,8 (Random): 
       if (type === 0) {
-        surveyData[q.id] = (Math.floor(Math.random() * 2) + 1) as 1|2; // 1 or 2
+        surveyData[q.id] = (Math.floor(Math.random() * 2) + 1) as 1|2; 
       } else if (type === 1) {
-        surveyData[q.id] = (Math.floor(Math.random() * 2) + 4) as 4|5; // 4 or 5
+        surveyData[q.id] = (Math.floor(Math.random() * 2) + 4) as 4|5; 
       } else {
-        surveyData[q.id] = (Math.floor(Math.random() * 5) + 1) as 1|2|3|4|5; // Random
+        surveyData[q.id] = (Math.floor(Math.random() * 5) + 1) as 1|2|3|4|5; 
       }
     });
 
-    // Mock Scores based on survey data logic roughly
     const scores: ASScores = {
       binhHoa: type === 0 ? 75 : 40,
       duongHu: type === 1 ? 65 : 20,
@@ -198,11 +316,22 @@ export const generateTestData = () => {
       damThap: 30, thapNhiet: 25, huyetU: 20, khiTre: 35, dacBiet: 15
     };
     
-    // Mock Clinical Data
     const clinicalData: ClinicalData = {
-      pre: { file: `img_pre_${seq}.jpg` },
-      postImmediate: { file: `img_post_${seq}.jpg` },
-      post10Min: { file: `img_10m_${seq}.jpg` },
+      pre: { 
+        file: `img_pre_${seq}.jpg`,
+        ei: (300 + Math.floor(Math.random() * 100)).toString(),
+        mi: (150 + Math.floor(Math.random() * 50)).toString()
+      },
+      postImmediate: { 
+        file: `img_post_${seq}.jpg`,
+        ei: (400 + Math.floor(Math.random() * 100)).toString(),
+        mi: (160 + Math.floor(Math.random() * 50)).toString()
+      },
+      post10Min: { 
+        file: `img_10m_${seq}.jpg`,
+        ei: (350 + Math.floor(Math.random() * 100)).toString(),
+        mi: (155 + Math.floor(Math.random() * 50)).toString()
+      },
       cuppingMarkTime: `${3 + Math.floor(Math.random() * 7)} ngày`
     };
 
@@ -255,29 +384,27 @@ export const exportConsentsToCSV = () => {
   downloadCSV(`CCMQ_DanhSachDongThuan_${new Date().toLocaleDateString('vi-VN').replace(/\//g,'-')}.csv`, content);
 };
 
-export const exportAllRecordsToCSV = () => {
+// Tách logic tạo nội dung CSV để dùng chung cho Download và Upload
+export const getAllRecordsCSVContent = (): string => {
   const records = getRecords();
   if (!records.length) {
-    alert("Chưa có dữ liệu để tải về!");
-    return;
+    return "";
   }
 
-  // Headers construction
   const headers = [
     "ID", "Thời gian", "Mã BN", "Họ Tên", "Lớp", "SĐT", "Năm Sinh", "Giới Tính", "Cân nặng", "Chiều cao",
-    // Scores
     "AS Bình Hòa", "AS Dương Hư", "AS Âm Hư", "AS Khí Hư", "AS Đàm Thấp", "AS Thấp Nhiệt", "AS Huyết Ứ", "AS Khí Trệ", "AS Đặc Biệt",
-    // Questions 1-60
     ...Array.from({length: 60}, (_, i) => `Q${i+1}`),
-    // Clinical
-    "File Trước", "File Ngay Sau", "File Sau 10p", "TG Mất Vết Giác"
+    "Pre_File", "Pre_EI", "Pre_MI",
+    "PostImm_File", "PostImm_EI", "PostImm_MI",
+    "Post10_File", "Post10_EI", "Post10_MI",
+    "TG Mất Vết Giác"
   ];
 
   const csvRows = [headers.join(',')];
 
   records.forEach(rec => {
     const p = rec.profile;
-    // Default 0 if score missing
     const s = rec.asScores || { binhHoa: 0, duongHu: 0, amHu: 0, khiHu: 0, damThap: 0, thapNhiet: 0, huyetU: 0, khiTre: 0, dacBiet: 0 };
     const c = rec.clinicalData;
     const q = rec.surveyData;
@@ -286,37 +413,41 @@ export const exportAllRecordsToCSV = () => {
       rec.id, rec.timestamp, p.patientCode, `"${p.fullName}"`, p.class, `"${p.phoneNumber || ''}"`, p.yearOfBirth, p.gender, p.weight, p.height,
       s.binhHoa, s.duongHu, s.amHu, s.khiHu, s.damThap, s.thapNhiet, s.huyetU, s.khiTre, s.dacBiet,
       ...Array.from({length: 60}, (_, i) => q[i+1] || ''),
-      `"${c.pre?.file || ''}"`,
-      `"${c.postImmediate?.file || ''}"`,
-      `"${c.post10Min?.file || ''}"`,
+      `"${c.pre?.file || ''}"`, `"${c.pre?.ei || ''}"`, `"${c.pre?.mi || ''}"`,
+      `"${c.postImmediate?.file || ''}"`, `"${c.postImmediate?.ei || ''}"`, `"${c.postImmediate?.mi || ''}"`,
+      `"${c.post10Min?.file || ''}"`, `"${c.post10Min?.ei || ''}"`, `"${c.post10Min?.mi || ''}"`,
       `"${c.cuppingMarkTime || ''}"`
     ];
     csvRows.push(row.join(','));
   });
 
-  downloadCSV(`CCMQ_TongHop_DuLieu_${new Date().toLocaleDateString('vi-VN').replace(/\//g,'-')}.csv`, csvRows.join('\n'));
+  return csvRows.join('\n');
+};
+
+export const exportAllRecordsToCSV = () => {
+  const content = getAllRecordsCSVContent();
+  if (!content) {
+    alert("Chưa có dữ liệu để tải về!");
+    return;
+  }
+  downloadCSV(`CCMQ_TongHop_DuLieu_${new Date().toLocaleDateString('vi-VN').replace(/\//g,'-')}.csv`, content);
 };
 
 export const exportToCSVs = (profile: UserProfile, surveyData: SurveyData, asScores: ASScores, clinicalData?: ClinicalData) => {
-  // Safe default if clinicalData is missing
   const cData = clinicalData || {
-    pre: { file: '' },
-    postImmediate: { file: '' },
-    post10Min: { file: '' },
+    pre: { file: '', ei: '', mi: '' },
+    postImmediate: { file: '', ei: '', mi: '' },
+    post10Min: { file: '', ei: '', mi: '' },
     cuppingMarkTime: ''
   };
   
-  // Also save to "Database" when exporting
   saveRecord(profile, surveyData, cData, asScores);
 
   const currentDate = new Date().toLocaleDateString('vi-VN');
-  // Use patientCode for filename if available, fallback to sequenceNumber
   const fileId = profile.patientCode || profile.sequenceNumber;
   const sanitizedName = profile.fullName.trim().replace(/\s+/g, '_').replace(/\./g, '');
   const baseFilename = `CCMQ_${fileId}_${sanitizedName}`;
 
-  // Common Info Headers
-  // Replace plain STT with Mã BN
   const commonHeaders = ['Mã BN', 'Ngày', 'Họ Tên', 'Lớp', 'SĐT', 'Năm Sinh', 'Giới Tính'];
   const commonRow = [
     `"${profile.patientCode}"`, 
@@ -328,13 +459,11 @@ export const exportToCSVs = (profile: UserProfile, surveyData: SurveyData, asSco
     profile.gender
   ];
 
-  // 1. FILE CÂU TRẢ LỜI (ANSWERS)
   const answersHeader = [...commonHeaders, ...CCMQ_QUESTIONS.map(q => `Câu ${q.id}`)];
   const answersRow = [...commonRow, ...CCMQ_QUESTIONS.map(q => surveyData[q.id] || '')];
   const answersContent = [answersHeader.join(','), answersRow.join(',')].join('\n');
   downloadCSV(`${baseFilename}_CauHoi.csv`, answersContent);
 
-  // 2. FILE ĐIỂM SỐ (SCORES)
   setTimeout(() => {
     const scoresHeader = [
       ...commonHeaders, 
@@ -348,22 +477,21 @@ export const exportToCSVs = (profile: UserProfile, surveyData: SurveyData, asSco
     ];
     const scoresContent = [scoresHeader.join(','), scoresRow.join(',')].join('\n');
     downloadCSV(`${baseFilename}_DiemAS.csv`, scoresContent);
-  }, 200); // Small delay to prevent browser blocking multiple downloads
+  }, 200);
 
-  // 3. FILE LÂM SÀNG (CLINICAL)
   setTimeout(() => {
     const clinicalHeader = [
       ...commonHeaders,
-      'File Trước',
-      'File Ngay Sau',
-      'File Sau 10p',
+      'Pre_File', 'Pre_EI', 'Pre_MI',
+      'PostImm_File', 'PostImm_EI', 'PostImm_MI',
+      'Post10_File', 'Post10_EI', 'Post10_MI',
       'TG Mất Vết Giác'
     ];
     const clinicalRow = [
       ...commonRow,
-      `"${cData.pre?.file || ''}"`,
-      `"${cData.postImmediate?.file || ''}"`,
-      `"${cData.post10Min?.file || ''}"`,
+      `"${cData.pre?.file || ''}"`, `"${cData.pre?.ei || ''}"`, `"${cData.pre?.mi || ''}"`,
+      `"${cData.postImmediate?.file || ''}"`, `"${cData.postImmediate?.ei || ''}"`, `"${cData.postImmediate?.mi || ''}"`,
+      `"${cData.post10Min?.file || ''}"`, `"${cData.post10Min?.ei || ''}"`, `"${cData.post10Min?.mi || ''}"`,
       `"${cData.cuppingMarkTime || ''}"`
     ];
     const clinicalContent = [clinicalHeader.join(','), clinicalRow.join(',')].join('\n');
