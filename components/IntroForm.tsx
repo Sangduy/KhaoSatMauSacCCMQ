@@ -11,6 +11,7 @@ export const IntroForm: React.FC<IntroFormProps> = ({ onComplete }) => {
   const [formData, setFormData] = useState({
     fullName: '',
     class: '',
+    studentId: '', // MSSV
     phoneNumber: '',
     yearOfBirth: '',
     gender: '' as 'Nam' | 'Nữ' | '',
@@ -20,7 +21,17 @@ export const IntroForm: React.FC<IntroFormProps> = ({ onComplete }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.fullName && formData.class && formData.yearOfBirth && formData.gender) {
+    
+    // --- CẬP NHẬT: Thêm điều kiện bắt buộc cho studentId, weight, height ---
+    if (
+      formData.fullName && 
+      formData.class && 
+      formData.studentId &&  // Bắt buộc
+      formData.yearOfBirth && 
+      formData.gender &&
+      formData.weight &&     // Bắt buộc
+      formData.height        // Bắt buộc
+    ) {
       const sequenceNumber = getNextSequenceNumber();
       const abbr = getAbbreviation(formData.fullName);
       const patientCode = `${abbr}${sequenceNumber}`;
@@ -33,7 +44,7 @@ export const IntroForm: React.FC<IntroFormProps> = ({ onComplete }) => {
       
       onComplete(fullProfile);
     } else {
-      alert("Vui lòng điền đầy đủ các trường bắt buộc (*)");
+      alert("Vui lòng điền đầy đủ các trường bắt buộc có dấu (*)");
     }
   };
 
@@ -52,7 +63,7 @@ export const IntroForm: React.FC<IntroFormProps> = ({ onComplete }) => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Họ và tên (Viết tắt tên) *
@@ -85,6 +96,21 @@ export const IntroForm: React.FC<IntroFormProps> = ({ onComplete }) => {
               required
             />
           </div>
+
+          <div>
+             <label className="block text-sm font-medium text-gray-700 mb-1">
+              MSSV *
+            </label>
+            <input
+              type="text"
+              name="studentId"
+              value={formData.studentId}
+              onChange={handleChange}
+              placeholder="VD: 205101234"
+              className={inputClasses}
+              required
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -95,7 +121,7 @@ export const IntroForm: React.FC<IntroFormProps> = ({ onComplete }) => {
               name="yearOfBirth"
               value={formData.yearOfBirth}
               onChange={handleChange}
-              placeholder="VD: 1990"
+              placeholder="VD: 2000"
               className={inputClasses}
               required
             />
@@ -133,24 +159,26 @@ export const IntroForm: React.FC<IntroFormProps> = ({ onComplete }) => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Cân nặng (kg)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Cân nặng (kg) *</label>
             <input
               type="number"
               name="weight"
               value={formData.weight}
               onChange={handleChange}
               className={inputClasses}
+              required // Thêm required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Chiều cao (cm)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Chiều cao (cm) *</label>
             <input
               type="number"
               name="height"
               value={formData.height}
               onChange={handleChange}
               className={inputClasses}
+              required // Thêm required
             />
           </div>
         </div>
