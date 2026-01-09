@@ -559,7 +559,7 @@ export const AdminPanel: React.FC = () => {
                 {activeTab === 'database' && (
                   <div className="flex h-full">
                     {/* LEFT COLUMN: LIST VIEW & SEARCH */}
-                    <div className={`${selectedRecord ? 'w-1/3 hidden md:flex' : 'w-full'} flex-col border-r border-gray-200 bg-white transition-all duration-300`}>
+                    <div className={`${selectedRecord ? 'w-1/3 hidden md:flex' : 'w-full flex'} flex-col border-r border-gray-200 bg-white transition-all duration-300`}>
                       {/* Toolbar */}
                       <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
                          <div className="relative">
