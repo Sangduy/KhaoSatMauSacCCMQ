@@ -3,6 +3,7 @@ export interface UserProfile {
   sequenceNumber: number; // Số thứ tự đếm
   patientCode: string; // Mã bệnh nhân (Viết tắt + STT)
   fullName: string;
+  studentId: string;
   class: string; // Lớp
   phoneNumber?: string; // Số điện thoại (Optional)
   yearOfBirth: string;
