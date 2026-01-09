@@ -288,6 +288,7 @@ export const generateTestData = () => {
       patientCode: `${abbr}${seq}`,
       fullName: name,
       class: dummyClasses[index % dummyClasses.length],
+      studentId: `205${Math.floor(100000 + Math.random() * 900000)}`, // Tạo MSSV ngẫu nhiên
       phoneNumber: `09${Math.floor(Math.random()*100000000)}`,
       yearOfBirth: (2000 + (index % 5)).toString(),
       gender: index % 2 === 0 ? 'Nam' : 'Nữ',
