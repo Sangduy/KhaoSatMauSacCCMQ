@@ -523,3 +523,32 @@ export const syncConsentToCloud = async (fullName: string, scriptUrl: string) =>
     return false;
   }
 };
+// xóa bản ghi
+// Thêm vào cuối file storageService.ts
+
+export const deleteRecordFromCloud = async (patientCode: string, scriptUrl: string): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const payload = {
+      action: 'delete',
+      id: patientCode // Với Cloud mode, ID chính là Mã BN
+    };
+
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+    });
+
+    const resText = await response.text();
+    const resJson = JSON.parse(resText);
+
+    if (resJson.status === 'success') {
+      return { success: true };
+    } else {
+      return { success: false, message: resJson.message || "Lỗi từ Script" };
+    }
+  } catch (error: any) {
+    return { success: false, message: error.message || "Lỗi kết nối mạng" };
+  }
+};
