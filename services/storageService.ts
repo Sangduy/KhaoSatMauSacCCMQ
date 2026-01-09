@@ -392,7 +392,7 @@ export const getAllRecordsCSVContent = (): string => {
   }
 
   const headers = [
-    "ID", "Thời gian", "Mã BN", "Họ Tên", "Lớp", "SĐT", "Năm Sinh", "Giới Tính", "Cân nặng", "Chiều cao",
+    "ID", "Thời gian", "Mã BN", "Họ Tên", "Lớp", "MSSV", "SĐT", "Năm Sinh", "Giới Tính", "Cân nặng", "Chiều cao",
     "AS Bình Hòa", "AS Dương Hư", "AS Âm Hư", "AS Khí Hư", "AS Đàm Thấp", "AS Thấp Nhiệt", "AS Huyết Ứ", "AS Khí Trệ", "AS Đặc Biệt",
     ...Array.from({length: 60}, (_, i) => `Q${i+1}`),
     "Pre_File", "Pre_EI", "Pre_MI",
@@ -410,7 +410,7 @@ export const getAllRecordsCSVContent = (): string => {
     const q = rec.surveyData;
 
     const row = [
-      rec.id, rec.timestamp, p.patientCode, `"${p.fullName}"`, p.class, `"${p.phoneNumber || ''}"`, p.yearOfBirth, p.gender, p.weight, p.height,
+      rec.id, rec.timestamp, p.patientCode, `"${p.fullName}"`, p.class, `"${p.studentId || ''}"`, `"${p.phoneNumber || ''}"`, p.yearOfBirth, p.gender, p.weight, p.height,
       s.binhHoa, s.duongHu, s.amHu, s.khiHu, s.damThap, s.thapNhiet, s.huyetU, s.khiTre, s.dacBiet,
       ...Array.from({length: 60}, (_, i) => q[i+1] || ''),
       `"${c.pre?.file || ''}"`, `"${c.pre?.ei || ''}"`, `"${c.pre?.mi || ''}"`,
@@ -448,12 +448,13 @@ export const exportToCSVs = (profile: UserProfile, surveyData: SurveyData, asSco
   const sanitizedName = profile.fullName.trim().replace(/\s+/g, '_').replace(/\./g, '');
   const baseFilename = `CCMQ_${fileId}_${sanitizedName}`;
 
-  const commonHeaders = ['Mã BN', 'Ngày', 'Họ Tên', 'Lớp', 'SĐT', 'Năm Sinh', 'Giới Tính'];
+  const commonHeaders = ['Mã BN', 'Ngày', 'Họ Tên', 'Lớp', 'MSSV', 'SĐT', 'Năm Sinh', 'Giới Tính'];
   const commonRow = [
     `"${profile.patientCode}"`, 
     `"${currentDate}"`, 
     `"${profile.fullName}"`,
     `"${profile.class}"`,
+    `"${profile.studentId || ''}"`, 
     `"${profile.phoneNumber || ''}"`,
     profile.yearOfBirth, 
     profile.gender
