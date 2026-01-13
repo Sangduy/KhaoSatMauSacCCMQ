@@ -34,7 +34,14 @@ export const IntroForm: React.FC<IntroFormProps> = ({ onComplete }) => {
     ) {
       const sequenceNumber = getNextSequenceNumber();
       const abbr = getAbbreviation(formData.fullName);
-      const patientCode = `${abbr}${sequenceNumber}`;
+      //const patientCode = `${abbr}${sequenceNumber}`;
+      // --- LOGIC MỚI: Tên viết tắt + 3 số cuối MSSV ---
+// Cắt 3 ký tự cuối của MSSV. Nếu ngắn quá thì lấy hết.
+const mssvSuffix = formData.studentId.trim().length > 3 
+                   ? formData.studentId.trim().slice(-3) 
+                   : formData.studentId.trim();
+
+const patientCode = `${abbr}${mssvSuffix}`;
       
       const fullProfile: UserProfile = {
         ...formData,
