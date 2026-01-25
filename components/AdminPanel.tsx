@@ -147,7 +147,6 @@ export const AdminPanel: React.FC = () => {
       const newPhaseData = { ...currentPhase, [`${type}_${point}`]: value };
 
       // Lấy cặp giá trị Red/Green để tính toán
-      // Dùng as any để tránh lỗi TypeScript index
       const greenVal = type === 'green' ? value : (newPhaseData as any)[`green_${point}`];
       const redVal = type === 'red' ? value : (newPhaseData as any)[`red_${point}`];
 
@@ -276,6 +275,7 @@ export const AdminPanel: React.FC = () => {
 
                           <div className="flex-1 overflow-y-auto p-6 space-y-6">
                             
+                            {/* SECTION: NHẬP LIỆU LÂM SÀNG (MỚI) */}
                             {/* Vòng lặp 3 thời điểm */}
                             {[
                               { key: 'pre', label: '1. TRƯỚC (PRE)' },
@@ -344,6 +344,67 @@ export const AdminPanel: React.FC = () => {
                                <input type="text" className="w-full mt-1 p-2 border rounded" 
                                   value={editingClinicalData.cuppingMarkTime}
                                   onChange={(e) => setEditingClinicalData({...editingClinicalData, cuppingMarkTime: e.target.value})} />
+                            </div>
+
+                            {/* SECTION: THÔNG TIN CHI TIẾT (ĐÃ KHÔI PHỤC) */}
+                            {/* Card: AS Scores */}
+                            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                              <h5 className="font-semibold text-gray-800 mb-3 border-b pb-2 flex items-center gap-2">
+                                <Settings size={16} className="text-blue-500"/> Kết quả AS Score
+                              </h5>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-2 gap-x-4 text-sm">
+                                {selectedRecord.asScores && Object.entries(selectedRecord.asScores).map(([key, val]) => {
+                                   const mapName: any = {
+                                     binhHoa: 'Bình Hòa', duongHu: 'Dương Hư', amHu: 'Âm Hư', khiHu: 'Khí Hư',
+                                     damThap: 'Đàm Thấp', thapNhiet: 'Thấp Nhiệt', huyetU: 'Huyết Ứ', khiTre: 'Khí Trệ', dacBiet: 'Đặc Biệt'
+                                   };
+                                   const isHigh = key !== 'binhHoa' && (val as number) >= 30;
+                                   const isGood = key === 'binhHoa' && (val as number) >= 60;
+                                   
+                                   return (
+                                     <div key={key} className="flex justify-between items-center p-2 rounded bg-gray-50">
+                                       <span className="text-gray-600">{mapName[key]}</span>
+                                       <span className={`font-bold ${isHigh ? 'text-red-600' : isGood ? 'text-green-600' : 'text-gray-800'}`}>
+                                         {val}
+                                       </span>
+                                     </div>
+                                   );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Card: 60 Answers */}
+                            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                              <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                                <h5 className="font-semibold text-gray-800">Chi tiết 60 câu trả lời</h5>
+                                <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded border">
+                                  Đỏ: Thường xuyên (4) / Luôn luôn (5)
+                                </span>
+                              </div>
+                              <div className="divide-y divide-gray-100">
+                                {CCMQ_QUESTIONS.map(q => {
+                                  const ansVal = selectedRecord.surveyData[q.id];
+                                  const ansLabel = ANSWER_OPTIONS.find(o => o.value === ansVal)?.label || '-';
+                                  // Highlight high frequency symptoms (4 or 5)
+                                  const isHigh = ansVal === 4 || ansVal === 5;
+                                  
+                                  return (
+                                    <div key={q.id} className={`p-3 text-sm flex gap-3 ${isHigh ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                                      <div className="w-8 shrink-0 text-gray-400 font-mono text-xs pt-0.5">#{q.id}</div>
+                                      <div className="flex-1 text-gray-700">{q.text}</div>
+                                      <div className="w-32 shrink-0 text-right">
+                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                          isHigh ? 'bg-red-100 text-red-700' : 
+                                          ansVal === 3 ? 'bg-yellow-100 text-yellow-700' : 
+                                          'bg-gray-100 text-gray-600'
+                                        }`}>
+                                          {ansLabel} ({ansVal})
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
                           </div>
                         </div>
