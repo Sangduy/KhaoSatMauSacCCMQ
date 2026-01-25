@@ -131,7 +131,7 @@ export const AdminPanel: React.FC = () => {
   };
 
   // --- HÀM XỬ LÝ NHẬP LIỆU VÀ TỰ ĐỘNG TÍNH TOÁN ---
-  const handleClinicalInputChange = (
+const handleClinicalInputChange = (
     phase: 'pre' | 'postImmediate' | 'post10Min', 
     point: string, 
     type: 'green' | 'red', 
@@ -147,15 +147,17 @@ export const AdminPanel: React.FC = () => {
       const newPhaseData = { ...currentPhase, [`${type}_${point}`]: value };
 
       // Lấy cặp giá trị Red/Green để tính toán
+      // Dùng (newPhaseData as any) để tránh lỗi TypeScript index
       const greenVal = type === 'green' ? value : (newPhaseData as any)[`green_${point}`];
       const redVal = type === 'red' ? value : (newPhaseData as any)[`red_${point}`];
 
-      // GỌI HÀM TỪ SERVICE RIÊNG
+      // GỌI HÀM TỪ SERVICE indicesService
       const { ei, mi } = calculateClinicalIndices(redVal, greenVal);
 
       // Cập nhật EI và MI vào state
-      newPhaseData[`ei_${point}`] = ei;
-      newPhaseData[`mi_${point}`] = mi;
+      // Dùng (newPhaseData as any) để gán giá trị động
+      (newPhaseData as any)[`ei_${point}`] = ei;
+      (newPhaseData as any)[`mi_${point}`] = mi;
 
       return {
         ...prev,
