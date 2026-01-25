@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Lock, Save, Database, Trash2, Download, RefreshCw, X, Cloud, FileText, ArrowLeft, Search, UploadCloud, CheckCircle, AlertCircle, CloudLightning, Zap, Globe, HardDriveUpload } from 'lucide-react';
+import { Settings, Lock, Save, Database, Trash2, Download, RefreshCw, X, Cloud, FileText, ArrowLeft, Search, UploadCloud, CheckCircle, AlertCircle, CloudLightning, Zap, Globe, HardDriveUpload, ChevronLeft, ChevronRight } from 'lucide-react';
 import { 
   getCurrentSequenceCounter, setSequenceCounter, getRecords, deleteRecord, clearAllRecords,
   exportToCSVs, exportAllRecordsToCSV, getGoogleScriptUrl, setGoogleScriptUrl, generateTestData,
@@ -147,6 +147,7 @@ export const AdminPanel: React.FC = () => {
       const newPhaseData = { ...currentPhase, [`${type}_${point}`]: value };
 
       // Lấy cặp giá trị Red/Green để tính toán
+      // Dùng as any để tránh lỗi TypeScript index
       const greenVal = type === 'green' ? value : (newPhaseData as any)[`green_${point}`];
       const redVal = type === 'red' ? value : (newPhaseData as any)[`red_${point}`];
 
@@ -166,6 +167,21 @@ export const AdminPanel: React.FC = () => {
 
   const handleFileChange = (phase: string, val: string) => {
       if (editingClinicalData) setEditingClinicalData({...editingClinicalData, [phase]: {...(editingClinicalData as any)[phase], file: val}});
+  };
+
+  const getRecordSummary = (rec: SurveyRecord) => {
+    const scores = rec.asScores || calculateASScores(rec.surveyData);
+    const highest = getHighestScores(scores);
+    
+    if (scores.binhHoa >= 60 && highest.every(h => !h.includes("Bình hòa") ? parseInt(h.match(/\d+/)?.[0] || '0') < 40 : true)) {
+       return <span className="text-emerald-600 font-bold text-xs">Bình hòa ({scores.binhHoa})</span>;
+    }
+    
+    return (
+      <span className="text-red-600 font-medium text-xs">
+        {highest.slice(0, 1).join(', ')}
+      </span>
+    );
   };
 
   const filteredRecords = records.filter(r => r.profile.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || r.profile.patientCode.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -261,7 +277,35 @@ export const AdminPanel: React.FC = () => {
                          )}
                        </div>
 
-                       <div className="flex-1 overflow-y-auto">{paginatedRecords.map(rec => (<div key={rec.id} onClick={() => setSelectedRecord(rec)} className={`p-4 cursor-pointer hover:bg-blue-50 ${selectedRecord?.id === rec.id ? 'bg-blue-50 border-l-4 border-blue-600' : 'border-l-4 border-transparent'}`}><div className="flex justify-between items-start"><span className="font-bold text-gray-800 text-sm">{rec.profile.fullName}</span><span className="text-xs font-mono bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">{rec.profile.patientCode}</span></div><div className="text-xs text-gray-500 mt-1">{new Date(rec.timestamp).toLocaleDateString('vi-VN')}</div></div>))}</div>
+                       <div className="flex-1 overflow-y-auto">
+                         {paginatedRecords.map(rec => (
+                           <div key={rec.id} onClick={() => setSelectedRecord(rec)} className={`p-4 cursor-pointer hover:bg-blue-50 ${selectedRecord?.id === rec.id ? 'bg-blue-50 border-l-4 border-blue-600' : 'border-l-4 border-transparent'}`}>
+                             <div className="flex justify-between items-start">
+                               <span className="font-bold text-gray-800 text-sm">{rec.profile.fullName}</span>
+                               <div className="flex items-center gap-2">
+                                 <span className="text-xs font-mono bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">{rec.profile.patientCode}</span>
+                                 {dataSource === 'local' && <button onClick={(e) => { e.stopPropagation(); handleDeleteRecord(rec.id, rec.profile.fullName); }} className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14} /></button>}
+                               </div>
+                             </div>
+                             <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                               <span>{new Date(rec.timestamp).toLocaleDateString('vi-VN')}</span>
+                               {getRecordSummary(rec)}
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+
+                       {/* --- KHÔI PHỤC PHÂN TRANG (PAGINATION) --- */}
+                       {filteredRecords.length > 0 && (
+                        <div className="p-3 bg-white border-t border-gray-200 flex items-center justify-between shrink-0 shadow-sm z-10">
+                          <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white transition-colors text-gray-600"><ChevronLeft size={20}/></button>
+                          <div className="flex flex-col items-center">
+                            <span className="text-xs font-bold text-gray-700">Trang {currentPage} / {totalPages}</span>
+                            <span className="text-[10px] text-gray-500 mt-0.5">{filteredRecords.length > 0 ? (currentPage - 1) * RECORDS_PER_PAGE + 1 : 0} - {Math.min(currentPage * RECORDS_PER_PAGE, filteredRecords.length)} / {filteredRecords.length}</span>
+                          </div>
+                          <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages} className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white transition-colors text-gray-600"><ChevronRight size={20}/></button>
+                        </div>
+                      )}
                     </div>
 
                     {/* RIGHT COLUMN: DETAIL VIEW & INPUT */}
