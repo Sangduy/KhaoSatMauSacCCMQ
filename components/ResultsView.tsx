@@ -12,10 +12,6 @@ interface ResultsViewProps {
 }
 
 const ScoreBar: React.FC<{ label: string; score: number; isReverse?: boolean }> = ({ label, score, isReverse = false }) => {
-  // Logic màu sắc:
-  // Nếu là Bình Hòa (isReverse=true): >60 Tốt (Xanh), <60 Kém (Vàng/Đỏ)
-  // Các thể khác: <30 Tốt (Xanh), 30-39 Xu hướng (Vàng), >=40 Bệnh lý (Đỏ)
-  
   let colorClass = "bg-gray-500";
   let textColor = "text-gray-700";
   
@@ -47,38 +43,37 @@ const ScoreBar: React.FC<{ label: string; score: number; isReverse?: boolean }> 
 
 export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset }) => {
   const [asScores, setAsScores] = useState<ASScores | null>(null);
-  
-  // Cloud Sync State
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [scriptUrl, setScriptUrl] = useState('');
   const hasAutoSynced = useRef(false);
-
-  // Notification State
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
-  // Mặc định data lâm sàng trống khi người dùng mới làm xong (sẽ được Admin nhập sau)
+  // --- CẬP NHẬT: Khởi tạo giá trị mặc định đầy đủ theo cấu trúc mới ---
+  const emptyPhase = {
+    file: '',
+    green_bl23_l: '', red_bl23_l: '', ei_bl23_l: '', mi_bl23_l: '',
+    green_bl23_r: '', red_bl23_r: '', ei_bl23_r: '', mi_bl23_r: '',
+    green_bl25_l: '', red_bl25_l: '', ei_bl25_l: '', mi_bl25_l: '',
+    green_bl25_r: '', red_bl25_r: '', ei_bl25_r: '', mi_bl25_r: '',
+  };
+
   const defaultClinicalData: ClinicalData = {
-    pre: { file: '', ei: '', mi: '' },
-    postImmediate: { file: '', ei: '', mi: '' },
-    post10Min: { file: '', ei: '', mi: '' },
+    pre: { ...emptyPhase },
+    postImmediate: { ...emptyPhase },
+    post10Min: { ...emptyPhase },
     cuppingMarkTime: ''
   };
+  // -------------------------------------------------------------------
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
     setNotification({ message, type });
-    // Tự động tắt sau 5 giây
-    const timer = setTimeout(() => {
-      setNotification(null);
-    }, 5000);
+    const timer = setTimeout(() => { setNotification(null); }, 5000);
     return () => clearTimeout(timer);
   };
 
   const performSync = async (scores: ASScores, url: string) => {
     if (syncStatus === 'success' || syncStatus === 'syncing') return;
-
     setSyncStatus('syncing');
-    
-    // Lưu local trước (backup)
     saveRecord(profile, data, defaultClinicalData, scores);
 
     const recordPayload = {
@@ -103,30 +98,17 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
   };
 
   useEffect(() => {
-    // 1. Calculate Scores immediately
     const scores = calculateASScores(data);
     setAsScores(scores);
-
     const url = getGoogleScriptUrl();
     setScriptUrl(url);
 
-    // 2. Auto Sync to Cloud if URL is present and haven't synced yet
     if (url && !hasAutoSynced.current) {
       hasAutoSynced.current = true;
       performSync(scores, url);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
-  // Nút: Lưu vào CSDL (Local Only)
-  const handleSaveToDB = () => {
-    if (asScores) {
-      saveRecord(profile, data, defaultClinicalData, asScores);
-      showNotification("Đã lưu vào bộ nhớ máy này.", 'success');
-    }
-  };
-
-  // Nút: Tải về file dữ liệu
   const handleDownloadFiles = () => {
     if (asScores) {
       exportToCSVs(profile, data, asScores, defaultClinicalData);
@@ -134,10 +116,9 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
     }
   };
 
-  // Retry Sync (Thủ công)
   const handleRetrySync = () => {
      if(asScores && scriptUrl) {
-         setSyncStatus('idle'); // Reset status to allow sync
+         setSyncStatus('idle');
          performSync(asScores, scriptUrl);
      } else {
          alert("Lỗi: Không tìm thấy URL kết nối.");
@@ -147,7 +128,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500 pb-12 relative">
       <div className="text-center">
-         {/* STATUS BADGE */}
          <div className="flex justify-center mb-4">
             {syncStatus === 'syncing' && (
                 <div className="flex items-center gap-2 bg-blue-100 text-blue-700 px-4 py-2 rounded-full font-bold shadow-sm animate-pulse">
@@ -173,7 +153,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
         <p className="text-gray-600">Điểm số CCMQ đã được tính toán tự động dựa trên câu trả lời của bạn.</p>
       </div>
 
-      {/* AS SCORES CARD */}
       {asScores && (
         <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
           <div className="bg-gradient-to-r from-teal-600 to-emerald-600 p-4 text-white flex justify-between items-center">
@@ -185,7 +164,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
           </div>
           
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Cột trái: Biểu đồ */}
             <div>
                <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4 border-b pb-2">Biểu đồ điểm số</h4>
                <ScoreBar label="Thể Bình Hòa" score={asScores.binhHoa} isReverse={true} />
@@ -200,29 +178,21 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
                <ScoreBar label="Thể Đặc Biệt" score={asScores.dacBiet} />
             </div>
 
-            {/* Cột phải: Giải thích */}
             <div className="bg-gray-50 p-5 rounded-lg border border-gray-200 text-sm space-y-4">
                <h4 className="font-bold text-gray-800 border-b pb-2 border-gray-300">Hướng dẫn đọc kết quả</h4>
-               
                <div>
                  <span className="block font-semibold text-emerald-700">1. Thể Bình Hòa (Lý tưởng):</span>
-                 <p className="text-gray-600 mt-1">
-                   Điểm càng cao càng tốt (Tiêu chuẩn {'>'} 60). Đây là trạng thái cân bằng âm dương, khí huyết.
-                 </p>
+                 <p className="text-gray-600 mt-1">Điểm càng cao càng tốt (Tiêu chuẩn {'>'} 60). Đây là trạng thái cân bằng âm dương, khí huyết.</p>
                </div>
-
                <div>
                  <span className="block font-semibold text-red-700">2. Các Thể Bệnh Lý (Còn lại):</span>
-                 <p className="text-gray-600 mt-1">
-                   Điểm càng thấp càng tốt.
-                 </p>
+                 <p className="text-gray-600 mt-1">Điểm càng thấp càng tốt.</p>
                  <ul className="list-disc ml-5 mt-1 text-gray-500 space-y-1">
                    <li><span className="font-medium text-blue-600">Dưới 30 điểm:</span> Không rõ rệt (An toàn).</li>
                    <li><span className="font-medium text-yellow-600">30 - 39 điểm:</span> Có xu hướng lệch lạc (Cần lưu ý).</li>
                    <li><span className="font-medium text-red-600">Trên 40 điểm:</span> Thể chất bệnh lý rõ rệt (Cần điều chỉnh).</li>
                  </ul>
                </div>
-
                <div className="bg-white p-3 rounded border border-gray-200 mt-4">
                  <p className="font-semibold text-gray-700 mb-1">Kết luận sơ bộ:</p>
                  {asScores.binhHoa >= 60 && Object.values(asScores).filter(s => s !== asScores.binhHoa).every(s => (s as number) < 30) ? (
@@ -251,10 +221,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
         </div>
       )}
 
-      {/* ACTION BUTTONS */}
       <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mt-8 pb-8 pt-8 border-t border-gray-200 flex-wrap">
-        
-        {/* Nút gửi lại nếu lỗi */}
         {syncStatus === 'error' && (
              <Button 
               onClick={handleRetrySync} 
@@ -264,16 +231,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
               Gửi lại Kết quả
             </Button>
         )}
-
-        {/* Ẩn các nút Database local đối với người dùng bình thường để tránh rối, nhưng vẫn để đó nếu cần debug */}
-        {/* <Button 
-          onClick={handleSaveToDB} 
-          className="bg-gray-500 hover:bg-gray-600 min-w-[150px] py-3 text-sm"
-        >
-          <Database size={18} />
-          Lưu máy (Local)
-        </Button> */}
-
         <Button 
           onClick={handleDownloadFiles} 
           className="bg-green-600 hover:bg-green-700 shadow-lg shadow-green-200 min-w-[200px] py-3"
@@ -282,7 +239,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
           <Download size={20} />
           Tải kết quả về máy
         </Button>
-
         <div className="w-full sm:w-auto ml-0 sm:ml-2">
             <Button 
               onClick={() => {
@@ -299,7 +255,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
         </div>
       </div>
 
-       {/* Notification Toast (Float) */}
        {notification && (
         <div 
           className={`
@@ -317,12 +272,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
             <span className="font-bold text-base">{notification.type === 'success' ? 'Thành công' : 'Thông báo lỗi'}</span>
             <span className="text-sm opacity-95">{notification.message}</span>
           </div>
-          <button 
-            onClick={(e) => { e.stopPropagation(); setNotification(null); }} 
-            className="text-white/70 hover:text-white ml-2 p-1 hover:bg-white/20 rounded-full transition-colors"
-          >
-            <X size={20} />
-          </button>
+          <button onClick={(e) => { e.stopPropagation(); setNotification(null); }} className="text-white/70 hover:text-white ml-2 p-1 hover:bg-white/20 rounded-full transition-colors"><X size={20} /></button>
         </div>
       )}
     </div>
