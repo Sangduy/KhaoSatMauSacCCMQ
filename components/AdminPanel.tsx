@@ -6,7 +6,7 @@ import {
   syncRecordToCloud, backupDataToCloud, saveRecord, fetchRecordsFromCloud
 } from '../services/storageService';
 import { calculateASScores, getHighestScores } from '../services/scoreService';
-// --- IMPORT MỚI: Dịch vụ tính toán ---
+// Import Service tính toán
 import { calculateClinicalIndices } from '../services/indicesService'; 
 import { Button } from './Button';
 import { SurveyRecord, ClinicalData } from '../types';
@@ -131,7 +131,7 @@ export const AdminPanel: React.FC = () => {
   };
 
   // --- HÀM XỬ LÝ NHẬP LIỆU VÀ TỰ ĐỘNG TÍNH TOÁN ---
-const handleClinicalInputChange = (
+  const handleClinicalInputChange = (
     phase: 'pre' | 'postImmediate' | 'post10Min', 
     point: string, 
     type: 'green' | 'red', 
@@ -147,15 +147,14 @@ const handleClinicalInputChange = (
       const newPhaseData = { ...currentPhase, [`${type}_${point}`]: value };
 
       // Lấy cặp giá trị Red/Green để tính toán
-      // Dùng (newPhaseData as any) để tránh lỗi TypeScript index
+      // Dùng as any để tránh lỗi TypeScript index
       const greenVal = type === 'green' ? value : (newPhaseData as any)[`green_${point}`];
       const redVal = type === 'red' ? value : (newPhaseData as any)[`red_${point}`];
 
-      // GỌI HÀM TỪ SERVICE indicesService
+      // GỌI HÀM TỪ SERVICE
       const { ei, mi } = calculateClinicalIndices(redVal, greenVal);
 
       // Cập nhật EI và MI vào state
-      // Dùng (newPhaseData as any) để gán giá trị động
       (newPhaseData as any)[`ei_${point}`] = ei;
       (newPhaseData as any)[`mi_${point}`] = mi;
 
@@ -180,9 +179,11 @@ const handleClinicalInputChange = (
 
   if (!isOpen) return <button onClick={handleOpen} className="fixed bottom-4 left-4 p-2 text-gray-400 hover:text-gray-600 bg-white rounded-full shadow-sm border border-gray-200 transition-colors z-40"><Settings size={20} /></button>;
 
+  // RENDER UI
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className={`bg-white rounded-xl shadow-2xl w-full ${isAuthenticated ? 'max-w-6xl h-[90vh]' : 'max-w-md'} flex flex-col overflow-hidden transition-all duration-300 relative`}>
+        {/* Header */}
         <div className="bg-gray-900 px-6 py-4 flex justify-between items-center text-white shrink-0 shadow-md">
           <h3 className="font-semibold flex items-center gap-2 text-lg"><Settings size={20} className="text-blue-400" /> Quản trị hệ thống</h3>
           <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-white transition-colors p-1 rounded-full hover:bg-gray-800"><X size={24} /></button>
@@ -193,6 +194,7 @@ const handleClinicalInputChange = (
              <div className="p-8 flex-1 flex items-center"><form onSubmit={handleLogin} className="space-y-6 w-full"><div className="text-center mb-6"><div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3"><Lock className="text-blue-600" size={32} /></div><h2 className="text-xl font-bold text-gray-800">Đăng nhập Quản trị</h2></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label><div className="relative"><Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" placeholder="Nhập mật khẩu..." autoFocus /></div></div><Button type="submit" className="w-full py-3 text-base">Truy cập</Button></form></div>
           ) : (
             <div className="flex flex-col h-full relative">
+              {/* Tabs */}
               <div className="flex border-b border-gray-200 bg-white shrink-0 items-center justify-between pr-4">
                  <div className="flex">
                     <button onClick={() => setActiveTab('settings')} className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-all border-b-2 ${activeTab === 'settings' ? 'border-blue-600 text-blue-600 bg-blue-50/50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><Settings size={18} /> Cấu hình</button>
@@ -208,13 +210,62 @@ const handleClinicalInputChange = (
 
                 {activeTab === 'database' && (
                   <div className="flex h-full">
-                    {/* LEFT COLUMN */}
+                    {/* LEFT COLUMN: LIST VIEW */}
                     <div className={`${selectedRecord ? 'w-1/3 hidden md:flex' : 'w-full flex'} flex-col border-r border-gray-200 bg-white transition-all duration-300`}>
-                       <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3"><div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} /><input type="text" placeholder="Tra cứu..." className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} autoFocus /></div><div className="flex gap-2"><Button variant="primary" onClick={exportAllRecordsToCSV} className="!py-1.5 !px-3 text-xs bg-green-600 hover:bg-green-700 border-green-600 flex-1 justify-center"><Download size={14} /> Tải CSV</Button></div></div>
+                       {/* Toolbar (Đã khôi phục đầy đủ các nút) */}
+                       <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
+                         <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                            <input type="text" placeholder="Tra cứu..." className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} autoFocus />
+                         </div>
+                         
+                         <div className="flex flex-wrap gap-2">
+                           {/* Sync All Button - Only available in Local Mode */}
+                           {dataSource === 'local' && (
+                               <Button 
+                                  variant="primary" 
+                                  onClick={handleSyncAll} 
+                                  disabled={isSyncingAll}
+                                  className="!py-1.5 !px-3 text-xs bg-blue-600 hover:bg-blue-700 border-blue-600 flex-1 justify-center whitespace-nowrap"
+                               >
+                                {isSyncingAll ? <RefreshCw size={14} className="animate-spin" /> : <CloudLightning size={14} />} 
+                                {isSyncingAll ? 'Đang gửi...' : 'Đẩy Local -> Cloud'}
+                               </Button>
+                           )}
+                           
+                           {/* Export Button */}
+                           <Button variant="primary" onClick={exportAllRecordsToCSV} className="!py-1.5 !px-3 text-xs bg-green-600 hover:bg-green-700 border-green-600 flex-1 justify-center whitespace-nowrap">
+                              <Download size={14} /> Tải CSV Tổng
+                            </Button>
+                         </div>
+                         
+                         {/* Local Actions: Fake Data, Clear All */}
+                         {dataSource === 'local' ? (
+                            <div className="flex gap-2">
+                                {/* Nút Fake Data (Đã khôi phục) */}
+                                <Button variant="secondary" onClick={handleGenerateData} className="!py-1.5 !px-3 text-xs bg-yellow-500 text-white hover:bg-yellow-600 border-yellow-500 flex-1 justify-center">
+                                    <Zap size={14} /> Fake Data
+                                </Button>
+                                {/* Nút Xóa Local (Đã khôi phục) */}
+                                <Button variant="outline" onClick={handleClearAll} className="!py-1.5 !px-3 text-xs text-red-600 border-red-600 hover:bg-red-50 flex-1 justify-center">
+                                    <Trash2 size={14} /> Xóa Local
+                                </Button>
+                            </div>
+                         ) : (
+                             /* Cloud Actions */
+                             <div className="flex gap-2">
+                                <Button variant="secondary" onClick={refreshData} className="!py-1.5 !px-3 text-xs bg-blue-500 text-white hover:bg-blue-600 border-blue-500 flex-1 justify-center">
+                                    {isLoadingCloud ? <RefreshCw size={14} className="animate-spin" /> : <Globe size={14} />} 
+                                    {isLoadingCloud ? 'Đang tải...' : 'Làm mới dữ liệu Cloud'}
+                                </Button>
+                             </div>
+                         )}
+                       </div>
+
                        <div className="flex-1 overflow-y-auto">{paginatedRecords.map(rec => (<div key={rec.id} onClick={() => setSelectedRecord(rec)} className={`p-4 cursor-pointer hover:bg-blue-50 ${selectedRecord?.id === rec.id ? 'bg-blue-50 border-l-4 border-blue-600' : 'border-l-4 border-transparent'}`}><div className="flex justify-between items-start"><span className="font-bold text-gray-800 text-sm">{rec.profile.fullName}</span><span className="text-xs font-mono bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">{rec.profile.patientCode}</span></div><div className="text-xs text-gray-500 mt-1">{new Date(rec.timestamp).toLocaleDateString('vi-VN')}</div></div>))}</div>
                     </div>
 
-                    {/* RIGHT COLUMN: CHI TIẾT VÀ NHẬP LIỆU */}
+                    {/* RIGHT COLUMN: DETAIL VIEW & INPUT */}
                     <div className={`${selectedRecord ? 'flex' : 'hidden md:flex'} w-full md:w-2/3 flex-col bg-gray-50 h-full overflow-hidden`}>
                       {selectedRecord && editingClinicalData ? (
                         <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
