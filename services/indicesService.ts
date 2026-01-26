@@ -15,8 +15,13 @@ export const calculateClinicalIndices = (red: string | number, green: string | n
     return { ei: '', mi: '' };
   }
 
-  const ei = Math.log10(rVal / gVal).toFixed(4);
-  const mi = Math.log10(1 / gVal).toFixed(4);
+ // Tính toán
+  const eiVal = Math.log10(rVal / gVal) * 100;
+  const miVal = Math.log10(255 / gVal) * 100;
 
-  return { ei, mi };
+  // Làm tròn 2 chữ số thập phân (vì số đã nhân 100 nên không cần lấy 4 số lẻ nữa)
+  return { 
+    ei: eiVal.toFixed(2), 
+    mi: miVal.toFixed(2) 
+  };
 };
