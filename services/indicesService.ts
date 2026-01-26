@@ -17,7 +17,7 @@ export const calculateClinicalIndices = (red: string | number, green: string | n
 
  // Tính toán
   const eiVal = Math.log10(rVal / gVal) * 100;
-  const miVal = Math.log10(255 / gVal) * 100;
+  const miVal = Math.log10(255 / rVal) * 100; //kiểm tra thử từ red sang green
 
   // Làm tròn 2 chữ số thập phân (vì số đã nhân 100 nên không cần lấy 4 số lẻ nữa)
   return { 
