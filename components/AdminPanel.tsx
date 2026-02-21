@@ -12,8 +12,6 @@ import { Button } from './Button';
 import { SurveyRecord, ClinicalData } from '../types';
 import { CCMQ_QUESTIONS, ANSWER_OPTIONS } from '../constants';
 
-const RECORDS_PER_PAGE = 10;
-
 export const AdminPanel: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -33,6 +31,10 @@ export const AdminPanel: React.FC = () => {
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [isLoadingCloud, setIsLoadingCloud] = useState(false);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [isDownloadingCloud, setIsDownloadingCloud] = useState(false);
+
+  // --- STATE QUẢN LÝ SỐ LƯỢNG DÒNG MỖI TRANG ---
+  const [recordsPerPage, setRecordsPerPage] = useState(10);
 
   const handleOpen = () => { setIsOpen(true); refreshData(); };
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
@@ -139,7 +141,6 @@ export const AdminPanel: React.FC = () => {
       }
     }
   };
-const [isDownloadingCloud, setIsDownloadingCloud] = useState(false);
 
   const handleDownloadCloudCSV = async () => {
     const url = getGoogleScriptUrl();
@@ -157,6 +158,7 @@ const [isDownloadingCloud, setIsDownloadingCloud] = useState(false);
       showNotification(result.message, 'error');
     }
   };
+
   // --- HÀM XỬ LÝ NHẬP LIỆU VÀ TỰ ĐỘNG TÍNH TOÁN ---
   const handleClinicalInputChange = (
     phase: 'pre' | 'postImmediate' | 'post10Min', 
@@ -213,10 +215,13 @@ const [isDownloadingCloud, setIsDownloadingCloud] = useState(false);
   };
 
   const filteredRecords = records.filter(r => r.profile.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || r.profile.patientCode.toLowerCase().includes(searchTerm.toLowerCase()));
-  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / RECORDS_PER_PAGE));
-  const startIndex = (currentPage - 1) * RECORDS_PER_PAGE;
-  const paginatedRecords = filteredRecords.slice(startIndex, startIndex + RECORDS_PER_PAGE);
+  
+  // --- TÍNH TOÁN PHÂN TRANG VỚI SỐ LƯỢNG TÙY CHỈNH ---
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / recordsPerPage));
+  const startIndex = (currentPage - 1) * recordsPerPage;
+  const paginatedRecords = filteredRecords.slice(startIndex, startIndex + recordsPerPage);
   const goToPage = (page: number) => { if (page >= 1 && page <= totalPages) setCurrentPage(page); };
+  
   const inputClasses = "w-full px-4 py-2 border border-gray-400 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
   const clinicalInputClasses = "bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block w-full p-2";
 
@@ -255,11 +260,17 @@ const [isDownloadingCloud, setIsDownloadingCloud] = useState(false);
                   <div className="flex h-full">
                     {/* LEFT COLUMN: LIST VIEW */}
                     <div className={`${selectedRecord ? 'w-1/3 hidden md:flex' : 'w-full flex'} flex-col border-r border-gray-200 bg-white transition-all duration-300`}>
-                       {/* Toolbar (Đã khôi phục đầy đủ các nút) */}
+                       {/* Toolbar */}
                        <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
-                         <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                            <input type="text" placeholder="Tra cứu..." className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} autoFocus />
+                         <div className="relative mb-2">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500" size={18} />
+                            <input 
+                                type="text" 
+                                placeholder="Tìm kiếm theo Tên hoặc Mã BN..." 
+                                className="w-full pl-10 pr-4 py-2.5 text-sm font-medium border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white shadow-sm transition-all placeholder-gray-400" 
+                                value={searchTerm} 
+                                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} 
+                            />
                          </div>
                          
                          <div className="flex flex-wrap gap-2">
@@ -285,11 +296,11 @@ const [isDownloadingCloud, setIsDownloadingCloud] = useState(false);
                          {/* Local Actions: Fake Data, Clear All */}
                          {dataSource === 'local' ? (
                             <div className="flex gap-2">
-                                {/* Nút Fake Data (Đã khôi phục) */}
+                                {/* Nút Fake Data */}
                                 <Button variant="secondary" onClick={handleGenerateData} className="!py-1.5 !px-3 text-xs bg-yellow-500 text-white hover:bg-yellow-600 border-yellow-500 flex-1 justify-center">
                                     <Zap size={14} /> Fake Data
                                 </Button>
-                                {/* Nút Xóa Local (Đã khôi phục) */}
+                                {/* Nút Xóa Local */}
                                 <Button variant="outline" onClick={handleClearAll} className="!py-1.5 !px-3 text-xs text-red-600 border-red-600 hover:bg-red-50 flex-1 justify-center">
                                     <Trash2 size={14} /> Xóa Local
                                 </Button>
@@ -327,15 +338,35 @@ const [isDownloadingCloud, setIsDownloadingCloud] = useState(false);
                          ))}
                        </div>
 
-                       {/* --- KHÔI PHỤC PHÂN TRANG (PAGINATION) --- */}
+                       {/* --- THANH CHỌN SỐ LƯỢNG VÀ PHÂN TRANG MỚI --- */}
                        {filteredRecords.length > 0 && (
-                        <div className="p-3 bg-white border-t border-gray-200 flex items-center justify-between shrink-0 shadow-sm z-10">
-                          <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white transition-colors text-gray-600"><ChevronLeft size={20}/></button>
-                          <div className="flex flex-col items-center">
-                            <span className="text-xs font-bold text-gray-700">Trang {currentPage} / {totalPages}</span>
-                            <span className="text-[10px] text-gray-500 mt-0.5">{filteredRecords.length > 0 ? (currentPage - 1) * RECORDS_PER_PAGE + 1 : 0} - {Math.min(currentPage * RECORDS_PER_PAGE, filteredRecords.length)} / {filteredRecords.length}</span>
+                        <div className="p-3 bg-white border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between shrink-0 shadow-sm z-10 gap-2">
+                          <div className="flex items-center gap-2">
+                             <span className="text-xs text-gray-500">Hiển thị:</span>
+                             <select
+                               value={recordsPerPage}
+                               onChange={(e) => {
+                                 setRecordsPerPage(Number(e.target.value));
+                                 setCurrentPage(1); // Trở về trang 1 khi đổi số lượng
+                               }}
+                               className="text-xs border border-gray-300 rounded p-1 focus:ring-blue-500 outline-none cursor-pointer"
+                             >
+                               <option value={5}>5 dòng</option>
+                               <option value={10}>10 dòng</option>
+                               <option value={20}>20 dòng</option>
+                               <option value={40}>40 dòng</option>
+                               <option value={50}>50 dòng</option>
+                             </select>
                           </div>
-                          <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages} className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white transition-colors text-gray-600"><ChevronRight size={20}/></button>
+                          
+                          <div className="flex items-center gap-3">
+                            <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white transition-colors text-gray-600"><ChevronLeft size={20}/></button>
+                            <div className="flex flex-col items-center">
+                              <span className="text-xs font-bold text-gray-700">Trang {currentPage}/{totalPages}</span>
+                              <span className="text-[10px] text-gray-500 mt-0.5">{startIndex + 1}-{Math.min(currentPage * recordsPerPage, filteredRecords.length)}/{filteredRecords.length}</span>
+                            </div>
+                            <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages} className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white transition-colors text-gray-600"><ChevronRight size={20}/></button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -395,7 +426,7 @@ const [isDownloadingCloud, setIsDownloadingCloud] = useState(false);
                                           </div>
                                        </div>
                                        {/* Hiển thị kết quả tính toán */}
-                                       <div className="grid grid-cols-2 gap-2 bg-white p-1 rounded border border-gray-200">
+                                       <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded border border-gray-200">
                                           <div className="text-center">
                                             <div className="text-[9px] text-gray-400">EI</div>
                                             <div className="text-xs font-mono font-bold text-blue-600">
@@ -410,7 +441,7 @@ const [isDownloadingCloud, setIsDownloadingCloud] = useState(false);
                                           </div>
                                           <div className="text-center">
                                             <div className="text-[9px] text-gray-400">RI</div>
-                                            <div className="text-xs font-mono font-bold text--600">
+                                            <div className="text-xs font-mono font-bold text-rose-600">
                                               {(editingClinicalData as any)[phase.key][`ri_${point.id}`] || '-'}
                                             </div>
                                           </div>
