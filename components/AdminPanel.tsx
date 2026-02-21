@@ -157,6 +157,7 @@ export const AdminPanel: React.FC = () => {
       // Cập nhật EI và MI vào state
       (newPhaseData as any)[`ei_${point}`] = ei;
       (newPhaseData as any)[`mi_${point}`] = mi;
+      (newPhaseData as any)[`ri_${point}`] = ri;
 
       return {
         ...prev,
@@ -374,6 +375,12 @@ export const AdminPanel: React.FC = () => {
                                             <div className="text-[9px] text-gray-400">MI</div>
                                             <div className="text-xs font-mono font-bold text-purple-600">
                                               {(editingClinicalData as any)[phase.key][`mi_${point.id}`] || '-'}
+                                            </div>
+                                          </div>
+                                          <div className="text-center">
+                                            <div className="text-[9px] text-gray-400">RI</div>
+                                            <div className="text-xs font-mono font-bold text--600">
+                                              {(editingClinicalData as any)[phase.key][`ri_${point.id}`] || '-'}
                                             </div>
                                           </div>
                                        </div>
