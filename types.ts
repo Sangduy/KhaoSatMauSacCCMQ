@@ -39,24 +39,28 @@ export interface ClinicalPhaseData {
   red_bl23_l: string;
   ei_bl23_l: string;    
   mi_bl23_l: string;
+  ri_bl23_l: string;
 
   // 2. Huyệt Thận Du (BL23) - Bên Phải (Right)
   green_bl23_r: string; 
   red_bl23_r: string;
   ei_bl23_r: string;    
   mi_bl23_r: string;
+  ri_bl23_r: string;
 
   // 3. Huyệt Đại Trường Du (BL25) - Bên Trái (Left)
   green_bl25_l: string; 
   red_bl25_l: string;
   ei_bl25_l: string;    
   mi_bl25_l: string;
+  ri_bl25_l: string;
 
   // 4. Huyệt Đại Trường Du (BL25) - Bên Phải (Right)
   green_bl25_r: string; 
   red_bl25_r: string;
   ei_bl25_r: string;    
   mi_bl25_r: string;
+  ri_bl25_r: string;
 }
 
 // Dữ liệu chỉ số lâm sàng (Admin nhập)
