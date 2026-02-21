@@ -77,7 +77,17 @@ export const AdminPanel: React.FC = () => {
     }
   }, [selectedRecord]);
 
-  const handleLogin = (e: React.FormEvent) => { e.preventDefault(); if (password === 'admin123') { setIsAuthenticated(true); setPassword(''); } else { alert('Mật khẩu không đúng!'); } };
+  const handleLogin = (e: React.FormEvent) => { 
+    e.preventDefault(); 
+    if (password === 'admin123') { 
+      setIsAuthenticated(true); 
+      setPassword(''); 
+      // LƯU TRẠNG THÁI ADMIN VÀO BỘ NHỚ TẠM
+      sessionStorage.setItem('isAdmin', 'true'); 
+    } else { 
+      alert('Mật khẩu không đúng!'); 
+    } 
+  };
   const handleUpdateSettings = (e: React.FormEvent) => { e.preventDefault(); const val = parseInt(newCounter, 10); if (!isNaN(val) && val >= 0) { setSequenceCounter(val); setCurrentCounter(val); } setGoogleScriptUrl(scriptUrl.trim()); showNotification('Đã lưu cấu hình hệ thống thành công!'); };
   
   const handleBackupToDrive = async () => {
