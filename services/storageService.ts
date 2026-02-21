@@ -342,7 +342,7 @@ export const getAllRecordsCSVContent = (): string => {
   ['Pre', 'PostImm', 'Post10m'].forEach(p => {
     headers.push(`File_${p}`);
     ['BL23_L', 'BL23_R', 'BL25_L', 'BL25_R'].forEach(pt => {
-       headers.push(`G_${pt}_${p}`, `R_${pt}_${p}`, `EI_${pt}_${p}`, `MI_${pt}_${p}`);
+       headers.push(`G_${pt}_${p}`, `R_${pt}_${p}`, `EI_${pt}_${p}`, `MI_${pt}_${p}`, `RI_${pt}_${p}`);
     });
   });
   headers.push("TG Mất Vết Giác");
@@ -364,7 +364,8 @@ export const getAllRecordsCSVContent = (): string => {
            ph[`green_${pt}`] || '', 
            ph[`red_${pt}`] || '', 
            ph[`ei_${pt}`] || '', 
-           ph[`mi_${pt}`] || ''
+           ph[`mi_${pt}`] || '',
+           ph[`ri_${pt}`] || ''
          );
       });
       return cols;
