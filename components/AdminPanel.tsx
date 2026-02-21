@@ -152,7 +152,7 @@ export const AdminPanel: React.FC = () => {
       const redVal = type === 'red' ? value : (newPhaseData as any)[`red_${point}`];
 
       // GỌI HÀM TỪ SERVICE
-      const { ei, mi } = calculateClinicalIndices(redVal, greenVal);
+      const { ei, mi, ri } = calculateClinicalIndices(redVal, greenVal);
 
       // Cập nhật EI và MI vào state
       (newPhaseData as any)[`ei_${point}`] = ei;
