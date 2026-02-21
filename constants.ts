@@ -44,7 +44,7 @@ export const CCMQ_QUESTIONS: Question[] = [
   { id: 30, text: "Bạn có dễ bị dị ứng không?", subText: "(Thuốc, thực phẩm, mùi, phấn hoa, thay đổi thời tiết, v.v.)" },
   { id: 31, text: "Da của bạn có dễ bị nổi mề đay hay phát ban không?" },
   { id: 32, text: "Da của bạn đã có bao giờ bị ban xuất huyết (đốm tím, vết bầm máu) do dị ứng không?" },
-  { id: 33, text: "Da vùng trán của bạn có tiết quá nhiều dầu không?" },
+  { id: 33, text: "Bạn có thấy trên da tự nhiên xuất hiện vết bầm đen hoặc tím (xuất huyết dưới da) không?" },
   { id: 34, text: "Da của bạn có ửng đỏ khi gãi hoặc trầy xước không?" },
   { id: 35, text: "Môi của bạn có đỏ hơn so với người khác không?" },
   { id: 36, text: "Bạn có những mạch máu nhỏ màu đỏ, tím xuất hiện trên má của mình không?" },
