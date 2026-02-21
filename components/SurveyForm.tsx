@@ -16,6 +16,7 @@ export const SurveyForm: React.FC<SurveyFormProps> = ({ onComplete }) => {
   const [answers, setAnswers] = useState<SurveyData>({});
   const [showError, setShowError] = useState(false); // State để kích hoạt hiển thị lỗi
   const topRef = useRef<HTMLDivElement>(null);
+  const isAdmin = typeof window !== 'undefined' && sessionStorage.getItem('isAdmin') === 'true';
 
   const totalPages = Math.ceil(CCMQ_QUESTIONS.length / QUESTIONS_PER_PAGE);
   const currentQuestions = CCMQ_QUESTIONS.slice(
@@ -161,6 +162,7 @@ export const SurveyForm: React.FC<SurveyFormProps> = ({ onComplete }) => {
         </Button>
 
         {/* ADMIN BUTTON - VISIBLE ON ALL SCREENS */}
+      {isAdmin && (
         <button
             onClick={handleAutoFill}
             className="flex items-center gap-1 px-3 py-1.5 text-yellow-600 bg-yellow-50 hover:bg-yellow-100 rounded-md transition-colors text-xs font-medium border border-yellow-200"
@@ -168,6 +170,7 @@ export const SurveyForm: React.FC<SurveyFormProps> = ({ onComplete }) => {
         >
             <Zap size={14} /> Auto-Fill (Test)
         </button>
+      )}
 
         <Button 
           variant="primary" 
