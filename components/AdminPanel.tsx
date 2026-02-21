@@ -3,7 +3,7 @@ import { Settings, Lock, Save, Database, Trash2, Download, RefreshCw, X, Cloud, 
 import { 
   getCurrentSequenceCounter, setSequenceCounter, getRecords, deleteRecord, clearAllRecords,
   exportToCSVs, exportAllRecordsToCSV, getGoogleScriptUrl, setGoogleScriptUrl, generateTestData,
-  syncRecordToCloud, backupDataToCloud, saveRecord, fetchRecordsFromCloud
+  syncRecordToCloud, backupDataToCloud, saveRecord, fetchRecordsFromCloud, exportCloudRecordsToCSV,
 } from '../services/storageService';
 import { calculateASScores, getHighestScores } from '../services/scoreService';
 // Import Service tính toán
@@ -129,7 +129,24 @@ export const AdminPanel: React.FC = () => {
       }
     }
   };
+const [isDownloadingCloud, setIsDownloadingCloud] = useState(false);
 
+  const handleDownloadCloudCSV = async () => {
+    const url = getGoogleScriptUrl();
+    if (!url) return alert("Chưa có URL cấu hình Google Script!");
+    
+    setIsDownloadingCloud(true);
+    showNotification("Đang chuẩn bị dữ liệu từ Cloud...", 'success');
+    
+    const result = await exportCloudRecordsToCSV(url);
+    
+    setIsDownloadingCloud(false);
+    if (result.success) {
+      showNotification(result.message, 'success');
+    } else {
+      showNotification(result.message, 'error');
+    }
+  };
   // --- HÀM XỬ LÝ NHẬP LIỆU VÀ TỰ ĐỘNG TÍNH TOÁN ---
   const handleClinicalInputChange = (
     phase: 'pre' | 'postImmediate' | 'post10Min', 
@@ -273,6 +290,10 @@ export const AdminPanel: React.FC = () => {
                                 <Button variant="secondary" onClick={refreshData} className="!py-1.5 !px-3 text-xs bg-blue-500 text-white hover:bg-blue-600 border-blue-500 flex-1 justify-center">
                                     {isLoadingCloud ? <RefreshCw size={14} className="animate-spin" /> : <Globe size={14} />} 
                                     {isLoadingCloud ? 'Đang tải...' : 'Làm mới dữ liệu Cloud'}
+                                </Button>
+                              <Button variant="primary" onClick={handleDownloadCloudCSV} disabled={isDownloadingCloud} className="!py-1.5 !px-3 text-xs bg-emerald-600 hover:bg-emerald-700 border-emerald-600 flex-1 justify-center whitespace-nowrap">
+                                    {isDownloadingCloud ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />} 
+                                    {isDownloadingCloud ? 'Đang tạo...' : 'Tải CSV Cloud'}
                                 </Button>
                              </div>
                          )}
