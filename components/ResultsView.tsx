@@ -51,10 +51,10 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ data, profile, onReset
   // --- CẬP NHẬT: Khởi tạo giá trị mặc định đầy đủ theo cấu trúc mới ---
   const emptyPhase = {
     file: '',
-    green_bl23_l: '', red_bl23_l: '', ei_bl23_l: '', mi_bl23_l: '',
-    green_bl23_r: '', red_bl23_r: '', ei_bl23_r: '', mi_bl23_r: '',
-    green_bl25_l: '', red_bl25_l: '', ei_bl25_l: '', mi_bl25_l: '',
-    green_bl25_r: '', red_bl25_r: '', ei_bl25_r: '', mi_bl25_r: '',
+    green_bl23_l: '', red_bl23_l: '', ei_bl23_l: '', mi_bl23_l: '', ri_bl23_l: '',
+    green_bl23_r: '', red_bl23_r: '', ei_bl23_r: '', mi_bl23_r: '', ri_bl23_r: '',
+    green_bl25_l: '', red_bl25_l: '', ei_bl25_l: '', mi_bl25_l: '', ri_bl25_l: '',
+    green_bl25_r: '', red_bl25_r: '', ei_bl25_r: '', mi_bl25_r: '', ri_bl25_r: '',
   };
 
   const defaultClinicalData: ClinicalData = {
