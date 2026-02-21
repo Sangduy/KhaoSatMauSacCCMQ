@@ -6,7 +6,7 @@
  * EI = log10(Red / Green)
  * MI = log10(1 / Green)
  */
-export const calculateClinicalIndices = (red: string | number, green: string | number): { ei: string, mi: string } => {
+export const calculateClinicalIndices = (red: string | number, green: string | number): { ei: string, mi: string, ri: string } => {
   const rVal = typeof red === 'string' ? parseFloat(red) : red;
   const gVal = typeof green === 'string' ? parseFloat(green) : green;
 
