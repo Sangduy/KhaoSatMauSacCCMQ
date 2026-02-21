@@ -435,3 +435,105 @@ export const exportToCSVs = (profile: UserProfile, surveyData: SurveyData, asSco
     downloadCSV(`${baseFilename}_LamSang.csv`, [clHeader.join(','), clRow.join(',')].join('\n'));
   }, 600);
 };
+// ==========================================
+// TẢI TOÀN BỘ DỮ LIỆU TỪ CLOUD XUỐNG DƯỚI DẠNG CSV
+// ==========================================
+export const exportCloudRecordsToCSV = async (url: string): Promise<{success: boolean, message: string}> => {
+  try {
+    // 1. Gọi API lấy toàn bộ dữ liệu từ Cloud
+    const response = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'get_all' }),
+    });
+    
+    const result = await response.json();
+    
+    if (result.status !== 'success' || !result.data || result.data.length === 0) {
+      return { success: false, message: 'Không có dữ liệu trên Cloud hoặc tải thất bại.' };
+    }
+
+    const records: any[] = result.data;
+
+    // 2. Tạo mảng Tiêu đề (Headers) - Khớp 100% với Google Sheet
+    const headers = [
+      "Thời gian", "Mã BN", "Họ Tên", "Lớp", "MSSV", "SĐT", "Năm sinh", "Giới tính", "Cân nặng", "Chiều cao",
+      "AS Bình Hòa", "AS Dương Hư", "AS Âm Hư", "AS Khí Hư", "AS Đàm Thấp", "AS Thấp Nhiệt", "AS Huyết Ứ", "AS Khí Trệ", "AS Đặc Biệt"
+    ];
+    
+    const phases = [
+      { key: 'pre', name: 'Trước' },
+      { key: 'postImmediate', name: 'Ngay Sau' },
+      { key: 'post10Min', name: 'Sau 10p' }
+    ];
+    const points = [
+      { key: 'bl23_l', name: 'BL23(T)' }, { key: 'bl23_r', name: 'BL23(P)' },
+      { key: 'bl25_l', name: 'BL25(T)' }, { key: 'bl25_r', name: 'BL25(P)' }
+    ];
+
+    phases.forEach(p => {
+      headers.push(`File ${p.name}`);
+      points.forEach(pt => {
+        headers.push(`G_${pt.name} ${p.name}`, `R_${pt.name} ${p.name}`, `EI_${pt.name} ${p.name}`, `MI_${pt.name} ${p.name}`, `RI_${pt.name} ${p.name}`);
+      });
+    });
+    
+    headers.push("TG Mất Vết Giác");
+    for (let i = 1; i <= 60; i++) headers.push(`Câu ${i}`);
+
+    // Hàm bọc chuỗi an toàn cho CSV
+    const escapeCsv = (val: any) => `"${String(val || '').replace(/"/g, '""')}"`;
+
+    // 3. Chuyển đổi từng Record thành chuỗi CSV
+    const csvRows = records.map(rec => {
+      const p = rec.profile || {};
+      const s = rec.asScores || {};
+      const c = rec.clinicalData || {};
+      const q = rec.surveyData || {};
+
+      const row = [
+        escapeCsv(rec.timestamp), escapeCsv(p.patientCode), escapeCsv(p.fullName), escapeCsv(p.class),
+        escapeCsv(p.studentId), escapeCsv(p.phoneNumber), escapeCsv(p.yearOfBirth), escapeCsv(p.gender), escapeCsv(p.weight), escapeCsv(p.height),
+        s.binhHoa, s.duongHu, s.amHu, s.khiHu, s.damThap, s.thapNhiet, s.huyetU, s.khiTre, s.dacBiet
+      ];
+
+      phases.forEach(phase => {
+        const phData = c[phase.key] || {};
+        row.push(escapeCsv(phData.file));
+        points.forEach(pt => {
+          row.push(
+            escapeCsv(phData[`green_${pt.key}`]),
+            escapeCsv(phData[`red_${pt.key}`]),
+            escapeCsv(phData[`ei_${pt.key}`]),
+            escapeCsv(phData[`mi_${pt.key}`]),
+            escapeCsv(phData[`ri_${pt.key}`])
+          );
+        });
+      });
+
+      row.push(escapeCsv(c.cuppingMarkTime));
+      for (let i = 1; i <= 60; i++) row.push(escapeCsv(q[i]));
+
+      return row.join(',');
+    });
+
+    // 4. Gộp Tiêu đề và Dữ liệu, thêm BOM để Excel đọc không bị lỗi tiếng Việt
+    const csvContent = "\uFEFF" + headers.map(escapeCsv).join(',') + '\n' + csvRows.join('\n');
+
+    // 5. Tự động kích hoạt tải xuống
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const urlObj = URL.createObjectURL(blob);
+    link.setAttribute('href', urlObj);
+    link.setAttribute('download', `Cloud_Data_CCMQ_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(urlObj);
+
+    return { success: true, message: `Đã tải thành công ${records.length} hồ sơ!` };
+
+  } catch (error) {
+    console.error("Lỗi khi tải CSV từ Cloud:", error);
+    return { success: false, message: 'Đã xảy ra lỗi khi tải dữ liệu. Vui lòng thử lại.' };
+  }
+};
