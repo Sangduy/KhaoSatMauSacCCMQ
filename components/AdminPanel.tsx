@@ -451,7 +451,14 @@ export const AdminPanel: React.FC = () => {
                               { key: 'post10Min', label: '3. SAU 10P (POST 10M)' }
                             ].map((phase: any) => (
                               <div key={phase.key} className="bg-white p-4 rounded-lg border border-gray-300 shadow-sm">
-                                <h6 className="font-bold text-blue-900 mb-3 border-b pb-1">{phase.label}</h6>
+                               <div className="flex justify-between items-center mb-3 border-b pb-1">
+  <h6 className="font-bold text-blue-900">{phase.label}</h6>
+  {/* NÚT TẢI CSV XỊN SÒ */}
+  <label className="cursor-pointer bg-emerald-50 text-emerald-700 px-3 py-1 rounded-md text-xs font-bold border border-emerald-200 hover:bg-emerald-100 flex items-center gap-1.5 transition-colors shadow-sm" title="Tự động điền R, G và tính EI, MI, RI">
+    <UploadCloud size={14} /> Tự động bằng CSV
+    <input type="file" accept=".csv" className="hidden" onChange={(e) => handleCSVUpload(e, phase.key as 'pre'|'postImmediate'|'post10Min')} />
+  </label>
+</div>
                                 
                                 <div className="mb-4">
                                   <label className="text-xs font-bold text-gray-500">File Ảnh:</label>
