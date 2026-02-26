@@ -213,7 +213,68 @@ export const AdminPanel: React.FC = () => {
       </span>
     );
   };
+// HÀM ĐỌC VÀ BÓC TÁCH DỮ LIỆU FILE CSV IMAGEJ
+  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>, phase: 'pre' | 'postImmediate' | 'post10Min') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split('\n');
+      
+      const reds: number[] = [];
+      const greens: number[] = [];
+
+      // Quét từng dòng của file CSV
+      for (const line of lines) {
+        const cells = line.split(',');
+        if (cells.length > 2) {
+          const label = cells[1].trim().replace(/["']/g, ""); // Cột số 2 là Tên màu (Red/Green)
+          const mean = parseFloat(cells[2]);                  // Cột số 3 là Giá trị Mean
+          
+          if (label === 'Red' && !isNaN(mean)) reds.push(mean);
+          if (label === 'Green' && !isNaN(mean)) greens.push(mean);
+        }
+      }
+
+      // Kiểm tra xem có đủ 4 huyệt (4 Red, 4 Green) không
+      if (reds.length >= 4 && greens.length >= 4) {
+        setEditingClinicalData(prev => {
+          if (!prev) return prev;
+          const currentPhase = prev[phase];
+          const newPhaseData = { ...currentPhase };
+          
+          // Trật tự từ trên xuống dưới: Thận du L/R -> Đại trường du L/R
+          const points = ['bl23_l', 'bl23_r', 'bl25_l', 'bl25_r'];
+          
+          points.forEach((point, idx) => {
+            // Lấy 3 chữ số thập phân cho chuẩn xác
+            const redVal = reds[idx].toFixed(3);
+            const greenVal = greens[idx].toFixed(3);
+            
+            (newPhaseData as any)[`red_${point}`] = redVal;
+            (newPhaseData as any)[`green_${point}`] = greenVal;
+            
+            // Tính toán luôn 3 chỉ số EI, MI, RI
+            const { ei, mi, ri } = calculateClinicalIndices(redVal, greenVal);
+            (newPhaseData as any)[`ei_${point}`] = ei;
+            (newPhaseData as any)[`mi_${point}`] = mi;
+            (newPhaseData as any)[`ri_${point}`] = ri;
+          });
+          
+          return { ...prev, [phase]: newPhaseData };
+        });
+        showNotification(`Đã trích xuất thành công dữ liệu CSV cho giai đoạn này!`, 'success');
+      } else {
+        showNotification('File CSV không đúng định dạng hoặc thiếu huyệt!', 'error');
+      }
+    };
+    reader.readAsText(file);
+    
+    // Reset lại nút input để có thể bấm tải lại file đó nếu cần
+    e.target.value = '';
+  };
   const filteredRecords = records.filter(r => r.profile.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || r.profile.patientCode.toLowerCase().includes(searchTerm.toLowerCase()));
   
   // --- TÍNH TOÁN PHÂN TRANG VỚI SỐ LƯỢNG TÙY CHỈNH ---
