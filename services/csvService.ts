@@ -15,12 +15,10 @@ export const generateCustomCSV = (records: SurveyRecord[], options: ExportOption
 
   const headers: string[] = ["Thời gian"];
   
-  // 1. Nhóm Thông tin cá nhân
   if (options.personalInfo) {
     headers.push("Mã BN", "Họ Tên", "Lớp", "MSSV", "SĐT", "Năm sinh", "Giới tính", "Cân nặng", "Chiều cao");
   }
   
-  // 2. Nhóm Thông số Lâm sàng (AS, EI, MI, RI) + Mất vết
   if (options.clinicalIndices) {
     headers.push("AS Bình Hòa", "AS Dương Hư", "AS Âm Hư", "AS Khí Hư", "AS Đàm Thấp", "AS Thấp Nhiệt", "AS Huyết Ứ", "AS Khí Trệ", "AS Đặc Biệt");
     const pts = ['BL23(T)', 'BL23(P)', 'BL25(T)', 'BL25(P)'];
@@ -29,10 +27,9 @@ export const generateCustomCSV = (records: SurveyRecord[], options: ExportOption
         headers.push(`EI_${pt} ${phase}`, `MI_${pt} ${phase}`, `RI_${pt} ${phase}`);
       });
     });
-    headers.push("TG Mất Vết Giác"); // Vẫn giữ lại TG mất vết vì nó quan trọng cho phân tích
+    headers.push("TG Mất Vết Giác");
   }
 
-  // 3. Nhóm Thông số Màu (Red, Green)
   if (options.redGreenDetails) {
     const pts = ['BL23(T)', 'BL23(P)', 'BL25(T)', 'BL25(P)'];
     ['Trước', 'Ngay Sau', 'Sau 10p'].forEach(phase => {
@@ -43,7 +40,6 @@ export const generateCustomCSV = (records: SurveyRecord[], options: ExportOption
     });
   }
   
-  // 4. Nhóm Khảo sát
   if (options.surveyDetails) {
     for (let i = 1; i <= 60; i++) headers.push(`Câu ${i}`);
   }
@@ -70,12 +66,13 @@ export const generateCustomCSV = (records: SurveyRecord[], options: ExportOption
           rowData.push(...Array(12).fill('""')); 
         } else {
           ptKeys.forEach(pt => {
-            rowData.push(escape(phaseData[`ei_${pt}`]), escape(phaseData[`mi_${pt}`]), escape(phaseData[`ri_${pt}`]));
+            // FIX LỖI Ở ĐÂY: Thêm (phaseData as any)
+            rowData.push(escape((phaseData as any)[`ei_${pt}`]), escape((phaseData as any)[`mi_${pt}`]), escape((phaseData as any)[`ri_${pt}`]));
           });
         }
       });
       
-      rowData.push(escape(c.cuppingMarkTime)); // Điền TG mất vết
+      rowData.push(escape(c.cuppingMarkTime)); 
     }
 
     if (options.redGreenDetails) {
@@ -87,9 +84,10 @@ export const generateCustomCSV = (records: SurveyRecord[], options: ExportOption
         if (!phaseData) {
           rowData.push('""', ...Array(8).fill('""')); 
         } else {
-          rowData.push(escape(phaseData.file));
+          // FIX LỖI Ở ĐÂY: Thêm (phaseData as any)
+          rowData.push(escape((phaseData as any).file));
           ptKeys.forEach(pt => {
-            rowData.push(escape(phaseData[`green_${pt}`]), escape(phaseData[`red_${pt}`]));
+            rowData.push(escape((phaseData as any)[`green_${pt}`]), escape((phaseData as any)[`red_${pt}`]));
           });
         }
       });
