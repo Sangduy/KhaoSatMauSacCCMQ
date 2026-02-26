@@ -105,7 +105,7 @@ export const AdminPanel: React.FC = () => {
 
   const handleLogin = (e: React.FormEvent) => { 
     e.preventDefault(); 
-    if (password === 'admin123') { 
+    if (password === import.meta.env.VITE_ADMIN_PASSWORD) { 
       setIsAuthenticated(true); 
       setPassword(''); 
       sessionStorage.setItem('isAdmin', 'true'); 
