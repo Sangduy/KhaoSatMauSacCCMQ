@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Lock, Save, Database, Trash2, Download, RefreshCw, X, Cloud, FileText, ArrowLeft, Search, UploadCloud, CheckCircle, AlertCircle, CloudLightning, Zap, Globe, HardDriveUpload, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Settings, Lock, Save, Database, Trash2, Download, RefreshCw, X, Cloud, ArrowLeft, Search, UploadCloud, CloudLightning, Zap, Globe, HardDriveUpload, ChevronLeft, ChevronRight } from 'lucide-react';
 import { 
   getCurrentSequenceCounter, setSequenceCounter, getRecords, deleteRecord, clearAllRecords,
-  exportToCSVs, exportAllRecordsToCSV, getGoogleScriptUrl, setGoogleScriptUrl, generateTestData,
-  syncRecordToCloud, backupDataToCloud, saveRecord, fetchRecordsFromCloud, exportCloudRecordsToCSV,
+  getGoogleScriptUrl, setGoogleScriptUrl, generateTestData,
+  syncRecordToCloud, backupDataToCloud, saveRecord, fetchRecordsFromCloud
 } from '../services/storageService';
 import { calculateASScores, getHighestScores } from '../services/scoreService';
-// Import Service tính toán
 import { calculateClinicalIndices } from '../services/indicesService'; 
+import { generateCustomCSV, ExportOptions } from '../services/csvService'; // THÊM IMPORT CSV SERVICE
 import { Button } from './Button';
 import { SurveyRecord, ClinicalData } from '../types';
 import { CCMQ_QUESTIONS, ANSWER_OPTIONS } from '../constants';
@@ -31,10 +31,16 @@ export const AdminPanel: React.FC = () => {
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [isLoadingCloud, setIsLoadingCloud] = useState(false);
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
-  const [isDownloadingCloud, setIsDownloadingCloud] = useState(false);
-
-  // --- STATE QUẢN LÝ SỐ LƯỢNG DÒNG MỖI TRANG ---
   const [recordsPerPage, setRecordsPerPage] = useState(10);
+
+  // --- THÊM STATE QUẢN LÝ MODAL XUẤT CSV ---
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportOptions, setExportOptions] = useState<ExportOptions>({
+    personalInfo: true,
+    clinicalIndices: true,
+    redGreenDetails: true,
+    surveyDetails: true
+  });
 
   const handleOpen = () => { setIsOpen(true); refreshData(); };
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
@@ -70,21 +76,38 @@ export const AdminPanel: React.FC = () => {
 
   useEffect(() => { if (isOpen && isAuthenticated) refreshData(); }, [dataSource]);
 
+  // --- TÍNH NĂNG TỰ ĐỘNG GỌI NHÁP (CACHE) KHI CHỌN HỒ SƠ ---
   useEffect(() => {
     setSyncStatus('idle');
     if (selectedRecord) {
-      setEditingClinicalData(JSON.parse(JSON.stringify(selectedRecord.clinicalData)));
+      const draftKey = `draft_clinical_${selectedRecord.id}`;
+      const savedDraft = localStorage.getItem(draftKey);
+      
+      if (savedDraft) {
+        setEditingClinicalData(JSON.parse(savedDraft)); // Load nháp
+      } else {
+        setEditingClinicalData(JSON.parse(JSON.stringify(selectedRecord.clinicalData))); // Load gốc
+      }
     } else {
       setEditingClinicalData(null);
     }
   }, [selectedRecord]);
+
+  // --- TÍNH NĂNG TỰ ĐỘNG LƯU NHÁP (CACHE) KHI ĐANG GÕ ---
+  useEffect(() => {
+    if (selectedRecord && editingClinicalData) {
+      const draftKey = `draft_clinical_${selectedRecord.id}`;
+      if (JSON.stringify(editingClinicalData) !== JSON.stringify(selectedRecord.clinicalData)) {
+        localStorage.setItem(draftKey, JSON.stringify(editingClinicalData));
+      }
+    }
+  }, [editingClinicalData, selectedRecord]);
 
   const handleLogin = (e: React.FormEvent) => { 
     e.preventDefault(); 
     if (password === 'admin123') { 
       setIsAuthenticated(true); 
       setPassword(''); 
-      // LƯU TRẠNG THÁI ADMIN VÀO BỘ NHỚ TẠM
       sessionStorage.setItem('isAdmin', 'true'); 
     } else { 
       alert('Mật khẩu không đúng!'); 
@@ -106,6 +129,7 @@ export const AdminPanel: React.FC = () => {
   const handleClearAll = () => { if(dataSource==='cloud') return; if (prompt("Nhập 'XOA' để xóa toàn bộ Local DB:") === 'XOA') { clearAllRecords(); refreshData(); showNotification('Đã xóa sạch DB!', 'success'); } };
   const handleGenerateData = () => { if (confirm("Tạo hồ sơ giả?")) { generateTestData(); refreshData(); showNotification("Đã tạo Data giả!"); } };
 
+  // --- CẬP NHẬT: XÓA CACHE SAU KHI LƯU CLOUD ---
   const handleSyncToCloud = async () => {
     if (!selectedRecord) return;
     const url = getGoogleScriptUrl();
@@ -115,8 +139,14 @@ export const AdminPanel: React.FC = () => {
     const recordToSync = { ...selectedRecord, clinicalData: currentClinicalData };
     if (!recordToSync.asScores) recordToSync.asScores = calculateASScores(recordToSync.surveyData);
     if (dataSource === 'local') saveRecord(recordToSync.profile, recordToSync.surveyData, currentClinicalData, recordToSync.asScores);
+    
     const result = await syncRecordToCloud(recordToSync, url);
-    if (result.success) { setSyncStatus('success'); setTimeout(refreshData, 1000); showNotification('Đồng bộ thành công!'); } 
+    if (result.success) { 
+      localStorage.removeItem(`draft_clinical_${selectedRecord.id}`); // XÓA NHÁP
+      setSyncStatus('success'); 
+      setTimeout(refreshData, 1000); 
+      showNotification('Đồng bộ thành công!'); 
+    } 
     else { setSyncStatus('error'); showNotification(`Lỗi: ${result.message}`, 'error'); }
   };
 
@@ -129,11 +159,13 @@ export const AdminPanel: React.FC = () => {
       showNotification('Đồng bộ hoàn tất!', 'success');
   };
 
+  // --- CẬP NHẬT: XÓA CACHE SAU KHI LƯU LOCAL ---
   const handleSaveClinicalData = async () => {
     if (selectedRecord && editingClinicalData) {
       const updatedRecord = { ...selectedRecord, clinicalData: editingClinicalData };
       if (dataSource === 'local') {
           saveRecord(updatedRecord.profile, updatedRecord.surveyData, editingClinicalData, updatedRecord.asScores);
+          localStorage.removeItem(`draft_clinical_${selectedRecord.id}`); // XÓA NHÁP
           refreshData();
           showNotification("Đã lưu Local!");
       } else {
@@ -142,56 +174,19 @@ export const AdminPanel: React.FC = () => {
     }
   };
 
-  const handleDownloadCloudCSV = async () => {
-    const url = getGoogleScriptUrl();
-    if (!url) return alert("Chưa có URL cấu hình Google Script!");
-    
-    setIsDownloadingCloud(true);
-    showNotification("Đang chuẩn bị dữ liệu từ Cloud...", 'success');
-    
-    const result = await exportCloudRecordsToCSV(url);
-    
-    setIsDownloadingCloud(false);
-    if (result.success) {
-      showNotification(result.message, 'success');
-    } else {
-      showNotification(result.message, 'error');
-    }
-  };
-
-  // --- HÀM XỬ LÝ NHẬP LIỆU VÀ TỰ ĐỘNG TÍNH TOÁN ---
-  const handleClinicalInputChange = (
-    phase: 'pre' | 'postImmediate' | 'post10Min', 
-    point: string, 
-    type: 'green' | 'red', 
-    value: string
-  ) => {
+  const handleClinicalInputChange = (phase: 'pre' | 'postImmediate' | 'post10Min', point: string, type: 'green' | 'red', value: string) => {
     if (!editingClinicalData) return;
-
     setEditingClinicalData(prev => {
       if (!prev) return null;
-      
       const currentPhase = prev[phase];
-      // Cập nhật giá trị mới
       const newPhaseData = { ...currentPhase, [`${type}_${point}`]: value };
-
-      // Lấy cặp giá trị Red/Green để tính toán
-      // Dùng as any để tránh lỗi TypeScript index
       const greenVal = type === 'green' ? value : (newPhaseData as any)[`green_${point}`];
       const redVal = type === 'red' ? value : (newPhaseData as any)[`red_${point}`];
-
-      // GỌI HÀM TỪ SERVICE
       const { ei, mi, ri } = calculateClinicalIndices(redVal, greenVal);
-
-      // Cập nhật EI và MI vào state
       (newPhaseData as any)[`ei_${point}`] = ei;
       (newPhaseData as any)[`mi_${point}`] = mi;
       (newPhaseData as any)[`ri_${point}`] = ri;
-
-      return {
-        ...prev,
-        [phase]: newPhaseData
-      };
+      return { ...prev, [phase]: newPhaseData };
     });
   };
 
@@ -202,96 +197,67 @@ export const AdminPanel: React.FC = () => {
   const getRecordSummary = (rec: SurveyRecord) => {
     const scores = rec.asScores || calculateASScores(rec.surveyData);
     const highest = getHighestScores(scores);
-    
     if (scores.binhHoa >= 60 && highest.every(h => !h.includes("Bình hòa") ? parseInt(h.match(/\d+/)?.[0] || '0') < 40 : true)) {
        return <span className="text-emerald-600 font-bold text-xs">Bình hòa ({scores.binhHoa})</span>;
     }
-    
-    return (
-      <span className="text-red-600 font-medium text-xs">
-        {highest.slice(0, 1).join(', ')}
-      </span>
-    );
+    return <span className="text-red-600 font-medium text-xs">{highest.slice(0, 1).join(', ')}</span>;
   };
-// HÀM ĐỌC VÀ BÓC TÁCH DỮ LIỆU FILE CSV (PHIÊN BẢN TỰ DÒ CỘT THÔNG MINH)
+
+  // BÓC TÁCH DỮ LIỆU FILE CSV THÔNG MINH
   const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>, phase: 'pre' | 'postImmediate' | 'post10Min') => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      // Tách dòng và loại bỏ các dòng rỗng
       const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      
-      if (lines.length < 2) {
-        showNotification('File CSV trống hoặc không hợp lệ!', 'error');
-        return;
-      }
+      if (lines.length < 2) return showNotification('File CSV trống hoặc không hợp lệ!', 'error');
 
-      // 1. TỰ ĐỘNG DÒ TÌM VỊ TRÍ CỘT DỰA VÀO TIÊU ĐỀ
       const headerCells = lines[0].split(',').map(h => h.trim().replace(/["']/g, ""));
       const labelIndex = headerCells.findIndex(h => h === 'Label');
       const meanIndex = headerCells.findIndex(h => h === 'Mean');
-
-      if (labelIndex === -1 || meanIndex === -1) {
-        showNotification('Không tìm thấy cột "Label" hoặc "Mean" trong file CSV!', 'error');
-        return;
-      }
+      if (labelIndex === -1 || meanIndex === -1) return showNotification('Không tìm thấy cột "Label" hoặc "Mean" trong file CSV!', 'error');
 
       const reds: number[] = [];
       const greens: number[] = [];
-
-      // 2. BẮT ĐẦU ĐỌC DỮ LIỆU TỪ DÒNG SỐ 1 (Bỏ qua dòng Header)
       for (let i = 1; i < lines.length; i++) {
         const cells = lines[i].split(',');
-        // Đảm bảo dòng này có đủ số lượng cột
         if (cells.length > Math.max(labelIndex, meanIndex)) {
           const label = cells[labelIndex].trim().replace(/["']/g, ""); 
-          const mean = parseFloat(cells[meanIndex]); // Lấy đúng tọa độ cột Mean vừa dò được
-          
+          const mean = parseFloat(cells[meanIndex]); 
           if (label === 'Red' && !isNaN(mean)) reds.push(mean);
           if (label === 'Green' && !isNaN(mean)) greens.push(mean);
         }
       }
 
-      // 3. ĐIỀN VÀO APP NẾU ĐỦ 4 HUYỆT
       if (reds.length >= 4 && greens.length >= 4) {
         setEditingClinicalData(prev => {
           if (!prev) return prev;
           const currentPhase = prev[phase];
           const newPhaseData = { ...currentPhase };
-          
           const points = ['bl23_l', 'bl23_r', 'bl25_l', 'bl25_r'];
-          
           points.forEach((point, idx) => {
             const redVal = reds[idx].toFixed(3);
             const greenVal = greens[idx].toFixed(3);
-            
             (newPhaseData as any)[`red_${point}`] = redVal;
             (newPhaseData as any)[`green_${point}`] = greenVal;
-            
             const { ei, mi, ri } = calculateClinicalIndices(redVal, greenVal);
             (newPhaseData as any)[`ei_${point}`] = ei;
             (newPhaseData as any)[`mi_${point}`] = mi;
             (newPhaseData as any)[`ri_${point}`] = ri;
           });
-          
           return { ...prev, [phase]: newPhaseData };
         });
-        showNotification(`Đã trích xuất thành công dữ liệu CSV cho giai đoạn này!`, 'success');
+        showNotification(`Đã trích xuất thành công dữ liệu CSV!`, 'success');
       } else {
         showNotification('File CSV không đủ 4 vùng dữ liệu Red/Green (Tối thiểu 8 dòng)!', 'error');
       }
     };
     reader.readAsText(file);
-    
     e.target.value = '';
   };
-  // Filter Record
+
   const filteredRecords = records.filter(r => r.profile.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || r.profile.patientCode.toLowerCase().includes(searchTerm.toLowerCase()));
-  
-  // --- TÍNH TOÁN PHÂN TRANG VỚI SỐ LƯỢNG TÙY CHỈNH ---
   const totalPages = Math.max(1, Math.ceil(filteredRecords.length / recordsPerPage));
   const startIndex = (currentPage - 1) * recordsPerPage;
   const paginatedRecords = filteredRecords.slice(startIndex, startIndex + recordsPerPage);
@@ -302,7 +268,6 @@ export const AdminPanel: React.FC = () => {
 
   if (!isOpen) return <button onClick={handleOpen} className="fixed bottom-4 left-4 p-2 text-gray-400 hover:text-gray-600 bg-white rounded-full shadow-sm border border-gray-200 transition-colors z-40"><Settings size={20} /></button>;
 
-  // RENDER UI
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className={`bg-white rounded-xl shadow-2xl w-full ${isAuthenticated ? 'max-w-6xl h-[90vh]' : 'max-w-md'} flex flex-col overflow-hidden transition-all duration-300 relative`}>
@@ -333,9 +298,7 @@ export const AdminPanel: React.FC = () => {
 
                 {activeTab === 'database' && (
                   <div className="flex h-full">
-                    {/* LEFT COLUMN: LIST VIEW */}
                     <div className={`${selectedRecord ? 'w-1/3 hidden md:flex' : 'w-full flex'} flex-col border-r border-gray-200 bg-white transition-all duration-300`}>
-                       {/* Toolbar */}
                        <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
                          <div className="relative mb-2">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500" size={18} />
@@ -349,47 +312,29 @@ export const AdminPanel: React.FC = () => {
                          </div>
                          
                          <div className="flex flex-wrap gap-2">
-                           {/* Sync All Button - Only available in Local Mode */}
                            {dataSource === 'local' && (
-                               <Button 
-                                  variant="primary" 
-                                  onClick={handleSyncAll} 
-                                  disabled={isSyncingAll}
-                                  className="!py-1.5 !px-3 text-xs bg-blue-600 hover:bg-blue-700 border-blue-600 flex-1 justify-center whitespace-nowrap"
-                               >
+                               <Button variant="primary" onClick={handleSyncAll} disabled={isSyncingAll} className="!py-1.5 !px-3 text-xs bg-blue-600 hover:bg-blue-700 border-blue-600 flex-1 justify-center whitespace-nowrap">
                                 {isSyncingAll ? <RefreshCw size={14} className="animate-spin" /> : <CloudLightning size={14} />} 
                                 {isSyncingAll ? 'Đang gửi...' : 'Đẩy Local -> Cloud'}
                                </Button>
                            )}
                            
-                           {/* Export Button */}
-                           <Button variant="primary" onClick={exportAllRecordsToCSV} className="!py-1.5 !px-3 text-xs bg-green-600 hover:bg-green-700 border-green-600 flex-1 justify-center whitespace-nowrap">
-                              <Download size={14} /> Tải CSV Tổng
-                            </Button>
+                           {/* --- NÚT TẢI CSV GỘP CHUNG (MỞ MODAL) --- */}
+                           <Button variant="primary" onClick={() => setShowExportModal(true)} className="!py-1.5 !px-3 text-xs bg-emerald-600 hover:bg-emerald-700 border-emerald-600 flex-1 justify-center whitespace-nowrap">
+                              <Download size={14} /> Xuất file CSV
+                           </Button>
                          </div>
                          
-                         {/* Local Actions: Fake Data, Clear All */}
                          {dataSource === 'local' ? (
                             <div className="flex gap-2">
-                                {/* Nút Fake Data */}
-                                <Button variant="secondary" onClick={handleGenerateData} className="!py-1.5 !px-3 text-xs bg-yellow-500 text-white hover:bg-yellow-600 border-yellow-500 flex-1 justify-center">
-                                    <Zap size={14} /> Fake Data
-                                </Button>
-                                {/* Nút Xóa Local */}
-                                <Button variant="outline" onClick={handleClearAll} className="!py-1.5 !px-3 text-xs text-red-600 border-red-600 hover:bg-red-50 flex-1 justify-center">
-                                    <Trash2 size={14} /> Xóa Local
-                                </Button>
+                                <Button variant="secondary" onClick={handleGenerateData} className="!py-1.5 !px-3 text-xs bg-yellow-500 text-white hover:bg-yellow-600 border-yellow-500 flex-1 justify-center"><Zap size={14} /> Fake Data</Button>
+                                <Button variant="outline" onClick={handleClearAll} className="!py-1.5 !px-3 text-xs text-red-600 border-red-600 hover:bg-red-50 flex-1 justify-center"><Trash2 size={14} /> Xóa Local</Button>
                             </div>
                          ) : (
-                             /* Cloud Actions */
                              <div className="flex gap-2">
-                                <Button variant="secondary" onClick={refreshData} className="!py-1.5 !px-3 text-xs bg-blue-500 text-white hover:bg-blue-600 border-blue-500 flex-1 justify-center">
+                                <Button variant="secondary" onClick={refreshData} className="!py-1.5 !px-3 text-xs bg-blue-500 text-white hover:bg-blue-600 border-blue-500 flex-full justify-center">
                                     {isLoadingCloud ? <RefreshCw size={14} className="animate-spin" /> : <Globe size={14} />} 
                                     {isLoadingCloud ? 'Đang tải...' : 'Làm mới dữ liệu Cloud'}
-                                </Button>
-                              <Button variant="primary" onClick={handleDownloadCloudCSV} disabled={isDownloadingCloud} className="!py-1.5 !px-3 text-xs bg-emerald-600 hover:bg-emerald-700 border-emerald-600 flex-1 justify-center whitespace-nowrap">
-                                    {isDownloadingCloud ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />} 
-                                    {isDownloadingCloud ? 'Đang tạo...' : 'Tải CSV Cloud'}
                                 </Button>
                              </div>
                          )}
@@ -413,19 +358,11 @@ export const AdminPanel: React.FC = () => {
                          ))}
                        </div>
 
-                       {/* --- THANH CHỌN SỐ LƯỢNG VÀ PHÂN TRANG MỚI --- */}
                        {filteredRecords.length > 0 && (
                         <div className="p-3 bg-white border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between shrink-0 shadow-sm z-10 gap-2">
                           <div className="flex items-center gap-2">
                              <span className="text-xs text-gray-500">Hiển thị:</span>
-                             <select
-                               value={recordsPerPage}
-                               onChange={(e) => {
-                                 setRecordsPerPage(Number(e.target.value));
-                                 setCurrentPage(1); // Trở về trang 1 khi đổi số lượng
-                               }}
-                               className="text-xs border border-gray-300 rounded p-1 focus:ring-blue-500 outline-none cursor-pointer"
-                             >
+                             <select value={recordsPerPage} onChange={(e) => { setRecordsPerPage(Number(e.target.value)); setCurrentPage(1); }} className="text-xs border border-gray-300 rounded p-1 focus:ring-blue-500 outline-none cursor-pointer">
                                <option value={5}>5 dòng</option>
                                <option value={10}>10 dòng</option>
                                <option value={20}>20 dòng</option>
@@ -433,7 +370,6 @@ export const AdminPanel: React.FC = () => {
                                <option value={50}>50 dòng</option>
                              </select>
                           </div>
-                          
                           <div className="flex items-center gap-3">
                             <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white transition-colors text-gray-600"><ChevronLeft size={20}/></button>
                             <div className="flex flex-col items-center">
@@ -446,7 +382,6 @@ export const AdminPanel: React.FC = () => {
                       )}
                     </div>
 
-                    {/* RIGHT COLUMN: DETAIL VIEW & INPUT */}
                     <div className={`${selectedRecord ? 'flex' : 'hidden md:flex'} w-full md:w-2/3 flex-col bg-gray-50 h-full overflow-hidden`}>
                       {selectedRecord && editingClinicalData ? (
                         <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
@@ -456,9 +391,6 @@ export const AdminPanel: React.FC = () => {
                           </div>
 
                           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                            
-                            {/* SECTION: NHẬP LIỆU LÂM SÀNG (MỚI) */}
-                            {/* Vòng lặp 3 thời điểm */}
                             {[
                               { key: 'pre', label: '1. TRƯỚC (PRE)' },
                               { key: 'postImmediate', label: '2. NGAY SAU (POST IMM)' },
@@ -466,13 +398,12 @@ export const AdminPanel: React.FC = () => {
                             ].map((phase: any) => (
                               <div key={phase.key} className="bg-white p-4 rounded-lg border border-gray-300 shadow-sm">
                                <div className="flex justify-between items-center mb-3 border-b pb-1">
-  <h6 className="font-bold text-blue-900">{phase.label}</h6>
-  {/* NÚT TẢI CSV XỊN SÒ */}
-  <label className="cursor-pointer bg-emerald-50 text-emerald-700 px-3 py-1 rounded-md text-xs font-bold border border-emerald-200 hover:bg-emerald-100 flex items-center gap-1.5 transition-colors shadow-sm" title="Tự động điền R, G và tính EI, MI, RI">
-    <UploadCloud size={14} /> Tự động bằng CSV
-    <input type="file" accept=".csv" className="hidden" onChange={(e) => handleCSVUpload(e, phase.key as 'pre'|'postImmediate'|'post10Min')} />
-  </label>
-</div>
+                                  <h6 className="font-bold text-blue-900">{phase.label}</h6>
+                                  <label className="cursor-pointer bg-emerald-50 text-emerald-700 px-3 py-1 rounded-md text-xs font-bold border border-emerald-200 hover:bg-emerald-100 flex items-center gap-1.5 transition-colors shadow-sm" title="Tự động điền R, G và tính EI, MI, RI">
+                                    <UploadCloud size={14} /> Tự động bằng CSV
+                                    <input type="file" accept=".csv" className="hidden" onChange={(e) => handleCSVUpload(e, phase.key as 'pre'|'postImmediate'|'post10Min')} />
+                                  </label>
+                               </div>
                                 
                                 <div className="mb-4">
                                   <label className="text-xs font-bold text-gray-500">File Ảnh:</label>
@@ -481,7 +412,6 @@ export const AdminPanel: React.FC = () => {
                                     onChange={(e) => handleFileChange(phase.key, e.target.value)} />
                                 </div>
 
-                                {/* Grid 4 huyệt */}
                                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                                    {[
                                      { id: 'bl23_l', name: 'Thận Du (Trái)' },
@@ -507,7 +437,6 @@ export const AdminPanel: React.FC = () => {
                                             />
                                           </div>
                                        </div>
-                                       {/* Hiển thị kết quả tính toán */}
                                        <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded border border-gray-200">
                                           <div className="text-center">
                                             <div className="text-[9px] text-gray-400">EI</div>
@@ -541,8 +470,6 @@ export const AdminPanel: React.FC = () => {
                                   onChange={(e) => setEditingClinicalData({...editingClinicalData, cuppingMarkTime: e.target.value})} />
                             </div>
 
-                            {/* SECTION: THÔNG TIN CHI TIẾT (ĐÃ KHÔI PHỤC) */}
-                            {/* Card: AS Scores */}
                             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                               <h5 className="font-semibold text-gray-800 mb-3 border-b pb-2 flex items-center gap-2">
                                 <Settings size={16} className="text-blue-500"/> Kết quả AS Score
@@ -568,7 +495,6 @@ export const AdminPanel: React.FC = () => {
                               </div>
                             </div>
 
-                            {/* Card: 60 Answers */}
                             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                               <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
                                 <h5 className="font-semibold text-gray-800">Chi tiết 60 câu trả lời</h5>
@@ -580,7 +506,6 @@ export const AdminPanel: React.FC = () => {
                                 {CCMQ_QUESTIONS.map(q => {
                                   const ansVal = selectedRecord.surveyData[q.id];
                                   const ansLabel = ANSWER_OPTIONS.find(o => o.value === ansVal)?.label || '-';
-                                  // Highlight high frequency symptoms (4 or 5)
                                   const isHigh = ansVal === 4 || ansVal === 5;
                                   
                                   return (
@@ -610,6 +535,46 @@ export const AdminPanel: React.FC = () => {
                   </div>
                 )}
                 {notification && <div className={`fixed bottom-6 right-6 px-6 py-3 rounded-lg shadow-xl text-white z-[60] ${notification.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>{notification.message}</div>}
+                
+                {/* --- BẢNG MODAL CHỌN TRƯỜNG DỮ LIỆU ĐỂ TẢI CSV --- */}
+                {showExportModal && (
+                  <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
+                      <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2 flex items-center gap-2">
+                        <Download className="text-emerald-600" /> Tùy chọn xuất CSV
+                      </h3>
+                      
+                      <div className="space-y-3 mb-6">
+                        {[
+                          { key: 'personalInfo', label: '1. Thông tin cá nhân' },
+                          { key: 'clinicalIndices', label: '2. Thông số lâm sàng (AS, EI, MI, RI) & Mất vết' },
+                          { key: 'redGreenDetails', label: '3. Chi tiết thông số màu (Red, Green)' },
+                          { key: 'surveyDetails', label: '4. Chi tiết 60 câu hỏi khảo sát' }
+                        ].map(item => (
+                          <label key={item.key} className="flex items-center gap-3 p-3 border rounded-xl hover:bg-emerald-50 hover:border-emerald-200 cursor-pointer transition-all shadow-sm">
+                            <input 
+                              type="checkbox" 
+                              className="w-5 h-5 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500"
+                              checked={(exportOptions as any)[item.key]}
+                              onChange={(e) => setExportOptions({...exportOptions, [item.key]: e.target.checked})}
+                            />
+                            <span className="text-sm font-semibold text-gray-700">{item.label}</span>
+                          </label>
+                        ))}
+                      </div>
+
+                      <div className="flex gap-3 justify-end">
+                        <Button variant="outline" onClick={() => setShowExportModal(false)}>Hủy</Button>
+                        <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => {
+                          generateCustomCSV(records, exportOptions);
+                          setShowExportModal(false);
+                        }}>
+                          <Download size={16} /> Tải CSV
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
