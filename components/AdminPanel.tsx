@@ -263,17 +263,21 @@ export const AdminPanel: React.FC = () => {
 
 
   // --- CHỈNH SỬA 2: NÂNG CẤP BỘ LỌC ĐỂ KẾT HỢP TÌM KIẾM VÀ LỌC THIẾU THỜI GIAN ---
-  const filteredRecords = records.filter(r => {
-    // Kiểm tra khớp từ khóa tìm kiếm (Tên / Mã BN)
-    const matchSearch = r.profile.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                        r.profile.patientCode.toLowerCase().includes(searchTerm.toLowerCase());
+ // LỌC DỮ LIỆU AN TOÀN - CHỐNG LỖI MÀN HÌNH TRẮNG
+  const filteredRecords = (records || []).filter(r => {
+    // 1. Kiểm tra khớp từ khóa tìm kiếm (bọc thêm check để tránh lỗi profile null)
+    const fullName = r.profile?.fullName || '';
+    const patientCode = r.profile?.patientCode || '';
+    const matchSearch = fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                        patientCode.toLowerCase().includes(searchTerm.toLowerCase());
     
-    // Kiểm tra trạng thái bộ lọc
+    // 2. Kiểm tra khớp bộ lọc trạng thái
     let matchFilter = true;
     if (filterStatus === 'missing_time') {
       const time = r.clinicalData?.cuppingMarkTime;
-      // Trả về true nếu người này bị thiếu TG mất vết giác (rỗng, undefined)
-      matchFilter = !time || time.trim() === ''; 
+      // SỬA LỖI TẠI ĐÂY: Dùng String(time) để ép kiểu về chuỗi trước khi trim
+      // Nếu time là null hoặc undefined, !time sẽ đúng -> hiện ra người thiếu
+      matchFilter = !time || String(time).trim() === ''; 
     }
 
     return matchSearch && matchFilter;
