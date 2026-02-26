@@ -13,10 +13,16 @@ export const generateCustomCSV = (records: SurveyRecord[], options: ExportOption
     return;
   }
 
-  const headers: string[] = ["Thời gian"];
+  // ==========================================
+  // 1. TẠO DÒNG TIÊU ĐỀ (HEADERS)
+  // ==========================================
+  
+  // Mặc định cột đầu tiên LUÔN LÀ "Mã BN" để làm khóa chính cho SPSS
+  const headers: string[] = ["Mã BN"];
   
   if (options.personalInfo) {
-    headers.push("Mã BN", "Họ Tên", "Lớp", "MSSV", "SĐT", "Năm sinh", "Giới tính", "Cân nặng", "Chiều cao");
+    // Đẩy cột "Thời gian" vào nhóm Thông tin cá nhân
+    headers.push("Thời gian", "Họ Tên", "Lớp", "MSSV", "SĐT", "Năm sinh", "Giới tính", "Cân nặng", "Chiều cao");
   }
   
   if (options.clinicalIndices) {
@@ -44,13 +50,18 @@ export const generateCustomCSV = (records: SurveyRecord[], options: ExportOption
     for (let i = 1; i <= 60; i++) headers.push(`Câu ${i}`);
   }
 
+  // ==========================================
+  // 2. TẠO CÁC DÒNG DỮ LIỆU (ROWS)
+  // ==========================================
   const rows = records.map(rec => {
     const escape = (val: any) => `"${val !== undefined && val !== null ? val : ''}"`;
-    const rowData: string[] = [escape(new Date(rec.timestamp).toLocaleString('vi-VN'))];
+    const p = rec.profile;
+    
+    // Mặc định cột dữ liệu đầu tiên luôn lấy patientCode
+    const rowData: string[] = [escape(p.patientCode)];
     
     if (options.personalInfo) {
-      const p = rec.profile;
-      rowData.push(escape(p.patientCode), escape(p.fullName), escape(p.class), escape(p.studentId), escape(p.phoneNumber), escape(p.yearOfBirth), escape(p.gender), escape(p.weight), escape(p.height));
+      rowData.push(escape(new Date(rec.timestamp).toLocaleString('vi-VN')), escape(p.fullName), escape(p.class), escape(p.studentId), escape(p.phoneNumber), escape(p.yearOfBirth), escape(p.gender), escape(p.weight), escape(p.height));
     }
 
     if (options.clinicalIndices) {
@@ -66,7 +77,6 @@ export const generateCustomCSV = (records: SurveyRecord[], options: ExportOption
           rowData.push(...Array(12).fill('""')); 
         } else {
           ptKeys.forEach(pt => {
-            // FIX LỖI Ở ĐÂY: Thêm (phaseData as any)
             rowData.push(escape((phaseData as any)[`ei_${pt}`]), escape((phaseData as any)[`mi_${pt}`]), escape((phaseData as any)[`ri_${pt}`]));
           });
         }
@@ -84,7 +94,6 @@ export const generateCustomCSV = (records: SurveyRecord[], options: ExportOption
         if (!phaseData) {
           rowData.push('""', ...Array(8).fill('""')); 
         } else {
-          // FIX LỖI Ở ĐÂY: Thêm (phaseData as any)
           rowData.push(escape((phaseData as any).file));
           ptKeys.forEach(pt => {
             rowData.push(escape((phaseData as any)[`green_${pt}`]), escape((phaseData as any)[`red_${pt}`]));
