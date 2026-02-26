@@ -49,13 +49,12 @@ Dự án được thiết kế để tối ưu hóa quy trình lấy mẫu lâm 
 1. **Clone project:**
    ```bash
    git clone [https://github.com/sangduy/khaosatmausacccmq.git](https://github.com/sangduy/khaosatmausacccmq.git)
-Cài đặt thư viện:
+2. **Cài đặt thư viện:
+ ``bash
+  npm install ``
+3. **Chạy ở chế độ phát triển:
 
-Bash
-npm install
-Chạy ở chế độ phát triển:
-
-Bash
-npm run dev
-🏥 Mục Tiêu Nghiên Cứu
+ ``bash
+  npm  ``
+## 🏥 Mục Tiêu Nghiên Cứu
 Ứng dụng này phục vụ cho việc chuẩn hóa quy trình đánh giá thể chất và biến đổi màu sắc da tại các huyệt vị trong Y học Cổ truyền, hướng tới việc ứng dụng công nghệ số vào nghiên cứu lâm sàng.
