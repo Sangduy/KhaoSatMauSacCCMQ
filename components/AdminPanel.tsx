@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Lock, Save, Database, Trash2, Download, RefreshCw, X, Cloud, ArrowLeft, Search, UploadCloud, CloudLightning, Zap, Globe, HardDriveUpload, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
-import { 
+import {
+  Settings, Lock, Save, Database, Trash2, Download, RefreshCw, X, Cloud, ArrowLeft, Search, UploadCloud, CloudLightning, Zap, Globe, HardDriveUpload, ChevronLeft, ChevronRight, AlertTriangle
+} from 'lucide-react';
+import {
   getCurrentSequenceCounter, setSequenceCounter, getRecords, deleteRecord, clearAllRecords,
   getGoogleScriptUrl, setGoogleScriptUrl, generateTestData,
   syncRecordToCloud, backupDataToCloud, saveRecord, fetchRecordsFromCloud
 } from '../services/storageService';
 import { calculateASScores, getHighestScores } from '../services/scoreService';
-import { calculateClinicalIndices } from '../services/indicesService'; 
+import { calculateClinicalIndices } from '../services/indicesService';
 import { generateCustomCSV, ExportOptions } from '../services/csvService';
 import { Button } from './Button';
 import { SurveyRecord, ClinicalData } from '../types';
@@ -25,9 +27,8 @@ export const AdminPanel: React.FC = () => {
   const [records, setRecords] = useState<SurveyRecord[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'missing_time'>('all'); 
+  const [filterStatus, setFilterStatus] = useState<'all' | 'missing_time'>('all');
 
-  // --- REFS QUẢN LÝ TRẠNG THÁI CACHE (CHỐNG NHẢY DỮ LIỆU) ---
   const lastLoadedId = useRef<string | null>(null);
   const isTransitioning = useRef<boolean>(false);
 
@@ -86,34 +87,41 @@ export const AdminPanel: React.FC = () => {
     setCurrentPage(1);
   };
 
-  useEffect(() => { if (isOpen && isAuthenticated) refreshData(); }, [dataSource]);
+  useEffect(() => { if (isOpen && isAuthenticated) refreshData(); }, [dataSource, isOpen, isAuthenticated]);
 
-  // LOGIC NẠP CACHE
+  // NẠP CACHE AN TOÀN
   useEffect(() => {
-    if (!selectedRecord) { setEditingClinicalData(null); lastLoadedId.current = null; return; }
+    if (!selectedRecord) {
+      setEditingClinicalData(null);
+      lastLoadedId.current = null;
+      return;
+    }
     isTransitioning.current = true;
     lastLoadedId.current = null;
     const draftKey = `draft_clinical_${selectedRecord.id}`;
     const savedDraft = localStorage.getItem(draftKey);
     const dataToSet = savedDraft ? JSON.parse(savedDraft) : JSON.parse(JSON.stringify(selectedRecord.clinicalData || {}));
     setEditingClinicalData(dataToSet);
-    setTimeout(() => { lastLoadedId.current = selectedRecord.id; isTransitioning.current = false; }, 50);
+    setTimeout(() => {
+      lastLoadedId.current = selectedRecord.id;
+      isTransitioning.current = false;
+    }, 50);
   }, [selectedRecord?.id]);
 
-  // LOGIC LƯU CACHE
+  // LƯU CACHE AN TOÀN
   useEffect(() => {
     if (!isTransitioning.current && selectedRecord?.id && editingClinicalData && lastLoadedId.current === selectedRecord.id) {
       localStorage.setItem(`draft_clinical_${selectedRecord.id}`, JSON.stringify(editingClinicalData));
     }
-  }, [editingClinicalData]);
+  }, [editingClinicalData, selectedRecord?.id]);
 
-  const handleLogin = (e: React.FormEvent) => { 
-    e.preventDefault(); 
-    if (password === import.meta.env.VITE_ADMIN_PASSWORD) { // SỬ DỤNG BIẾN MÔI TRƯỜNG
-      setIsAuthenticated(true); 
-      setPassword(''); 
-      sessionStorage.setItem('isAdmin', 'true'); 
-    } else { alert('Mật khẩu không đúng!'); } 
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === import.meta.env.VITE_ADMIN_PASSWORD) {
+      setIsAuthenticated(true);
+      setPassword('');
+      sessionStorage.setItem('isAdmin', 'true');
+    } else { alert('Mật khẩu không đúng!'); }
   };
 
   const handleUpdateSettings = (e: React.FormEvent) => {
@@ -148,6 +156,27 @@ export const AdminPanel: React.FC = () => {
       refreshData();
       showNotification("Đã lưu Local!");
     }
+  };
+
+  const handleBackupToDrive = async () => {
+    const url = getGoogleScriptUrl();
+    if (!url || records.length === 0) return alert("Kiểm tra URL hoặc dữ liệu!");
+    setIsBackingUp(true);
+    const result = await backupDataToCloud(url);
+    setIsBackingUp(false);
+    result.success ? showNotification("Backup thành công!") : showNotification(`Lỗi: ${result.message}`, 'error');
+  };
+
+  const handleDeleteRecord = (id: string, name: string) => { if(dataSource === 'cloud') return alert("Xóa trên Sheet!"); if (confirm(`Xóa ${name}?`)) { deleteRecord(id); refreshData(); showNotification(`Đã xóa ${name}`); } };
+  const handleClearAll = () => { if (prompt("Nhập 'XOA' để xóa sạch Local DB:") === 'XOA') { clearAllRecords(); refreshData(); showNotification('Đã xóa sạch!'); } };
+
+  const handleSyncAll = async () => {
+      const url = getGoogleScriptUrl();
+      if (!url || !confirm(`Gửi ${records.length} hồ sơ lên Cloud?`)) return;
+      setIsSyncingAll(true);
+      for (const rec of records) { await syncRecordToCloud(rec, url); await new Promise(r => setTimeout(r, 200)); }
+      setIsSyncingAll(false);
+      showNotification('Hoàn tất đồng bộ!');
   };
 
   const handleClinicalInputChange = (phase: 'pre' | 'postImmediate' | 'post10Min', point: string, type: 'green' | 'red', value: string) => {
@@ -205,25 +234,26 @@ export const AdminPanel: React.FC = () => {
 
   const filteredRecords = (records || []).filter(r => {
     if (!r || !r.profile) return false;
-    const matchSearch = (r.profile.fullName || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    const matchSearch = (r.profile.fullName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                         (r.profile.patientCode || '').toLowerCase().includes(searchTerm.toLowerCase());
     let matchFilter = true;
     if (filterStatus === 'missing_time') {
       const time = r.clinicalData?.cuppingMarkTime;
-      matchFilter = !time || String(time).trim() === ''; 
+      matchFilter = !time || String(time).trim() === '';
     }
     return matchSearch && matchFilter;
   });
 
-  const paginatedRecords = filteredRecords.slice((currentPage - 1) * recordsPerPage, currentPage * recordsPerPage);
-  const totalPages = Math.ceil(filteredRecords.length / recordsPerPage) || 1;
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / recordsPerPage));
+  const startIndex = (currentPage - 1) * recordsPerPage;
+  const paginatedRecords = filteredRecords.slice(startIndex, startIndex + recordsPerPage);
+  const goToPage = (page: number) => { if (page >= 1 && page <= totalPages) setCurrentPage(page); };
 
   if (!isOpen) return <button onClick={handleOpen} className="fixed bottom-4 left-4 p-2 text-gray-400 hover:text-gray-600 bg-white rounded-full shadow-sm border border-gray-200 z-40"><Settings size={20} /></button>;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className={`bg-white rounded-xl shadow-2xl w-full ${isAuthenticated ? 'max-w-6xl h-[90vh]' : 'max-w-md'} flex flex-col overflow-hidden`}>
-        {/* Header */}
         <div className="bg-gray-900 px-6 py-4 flex justify-between items-center text-white shrink-0 shadow-md">
           <h3 className="font-semibold flex items-center gap-2 text-lg"><Settings size={20} className="text-blue-400" /> Quản trị hệ thống</h3>
           <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-white p-1 rounded-full hover:bg-gray-800"><X size={24} /></button>
@@ -241,7 +271,6 @@ export const AdminPanel: React.FC = () => {
              </div>
           ) : (
             <div className="flex flex-col h-full">
-              {/* Tabs */}
               <div className="flex border-b bg-white justify-between items-center pr-4">
                  <div className="flex">
                     <button onClick={() => setActiveTab('settings')} className={`px-6 py-4 text-sm font-medium ${activeTab === 'settings' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Cấu hình</button>
@@ -276,7 +305,6 @@ export const AdminPanel: React.FC = () => {
 
                 {activeTab === 'database' && (
                   <div className="flex h-full">
-                    {/* Sidebar */}
                     <div className={`${selectedRecord ? 'w-1/3 hidden md:flex' : 'w-full flex'} flex-col border-r bg-white`}>
                        <div className="p-4 bg-gray-50 border-b space-y-2">
                          <div className="flex gap-2">
@@ -296,18 +324,17 @@ export const AdminPanel: React.FC = () => {
                          ))}
                        </div>
                        <div className="p-2 border-t flex justify-between bg-white items-center">
-                         <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className="p-1 disabled:opacity-30"><ChevronLeft/></button>
+                         <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className="p-1 disabled:opacity-30"><ChevronLeft size={16}/></button>
                          <span className="text-xs">Trang {currentPage}/{totalPages}</span>
-                         <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages} className="p-1 disabled:opacity-30"><ChevronRight/></button>
+                         <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages} className="p-1 disabled:opacity-30"><ChevronRight size={16}/></button>
                        </div>
                     </div>
 
-                    {/* Chi tiết */}
                     <div className={`${selectedRecord ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-white overflow-hidden`}>
                       {selectedRecord && editingClinicalData ? (
                         <>
                           <div className="p-4 border-b flex justify-between items-center shrink-0 shadow-sm">
-                            <div className="flex items-center gap-2"><button onClick={() => setSelectedRecord(null)} className="md:hidden"><ArrowLeft/></button><h2 className="font-bold">{selectedRecord.profile?.fullName}</h2></div>
+                            <div className="flex items-center gap-2"><button onClick={() => setSelectedRecord(null)} className="md:hidden"><ArrowLeft size={20}/></button><h2 className="font-bold">{selectedRecord.profile?.fullName}</h2></div>
                             <div className="flex gap-2">
                               <Button onClick={handleSaveClinicalData} className="bg-blue-600 text-xs px-3">Lưu Local</Button>
                               <Button onClick={handleSyncToCloud} className="bg-orange-500 text-xs px-3">Lưu Cloud</Button>
@@ -353,7 +380,6 @@ export const AdminPanel: React.FC = () => {
         </div>
       </div>
       
-      {/* Modal Xuất CSV */}
       {showExportModal && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-xl p-6 w-full max-w-xs shadow-2xl">
