@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; // ĐÃ THÊM useRef VÀO ĐÂY
 import { Settings, Lock, Save, Database, Trash2, Download, RefreshCw, X, Cloud, ArrowLeft, Search, UploadCloud, CloudLightning, Zap, Globe, HardDriveUpload, ChevronLeft, ChevronRight } from 'lucide-react';
 import { 
   getCurrentSequenceCounter, setSequenceCounter, getRecords, deleteRecord, clearAllRecords,
@@ -7,7 +7,7 @@ import {
 } from '../services/storageService';
 import { calculateASScores, getHighestScores } from '../services/scoreService';
 import { calculateClinicalIndices } from '../services/indicesService'; 
-import { generateCustomCSV, ExportOptions } from '../services/csvService'; // THÊM IMPORT CSV SERVICE
+import { generateCustomCSV, ExportOptions } from '../services/csvService';
 import { Button } from './Button';
 import { SurveyRecord, ClinicalData } from '../types';
 import { CCMQ_QUESTIONS, ANSWER_OPTIONS } from '../constants';
@@ -25,10 +25,11 @@ export const AdminPanel: React.FC = () => {
   const [records, setRecords] = useState<SurveyRecord[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // --- CHỈNH SỬA 1: THÊM STATE QUẢN LÝ BỘ LỌC TÌNH TRẠNG ---
   const [filterStatus, setFilterStatus] = useState<'all' | 'missing_time'>('all'); 
-  
+
+  // --- CHỈNH SỬA: THÊM REF ĐỂ THEO DÕI ID ĐÃ NẠP DỮ LIỆU ---
+  const lastLoadedId = useRef<string | null>(null);
+
   const [selectedRecord, setSelectedRecord] = useState<SurveyRecord | null>(null);
   const [editingClinicalData, setEditingClinicalData] = useState<ClinicalData | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
@@ -37,7 +38,6 @@ export const AdminPanel: React.FC = () => {
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   const [recordsPerPage, setRecordsPerPage] = useState(10);
 
-  // --- THÊM STATE QUẢN LÝ MODAL XUẤT CSV ---
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportOptions, setExportOptions] = useState<ExportOptions>({
     personalInfo: true,
@@ -80,7 +80,7 @@ export const AdminPanel: React.FC = () => {
 
   useEffect(() => { if (isOpen && isAuthenticated) refreshData(); }, [dataSource]);
 
-  // --- TÍNH NĂNG TỰ ĐỘNG GỌI NHÁP (CACHE) KHI CHỌN HỒ SƠ ---
+  // --- CHỈNH SỬA: TÍNH NĂNG TỰ ĐỘNG GỌI NHÁP (CACHE) AN TOÀN ---
   useEffect(() => {
     setSyncStatus('idle');
     if (selectedRecord) {
@@ -88,24 +88,28 @@ export const AdminPanel: React.FC = () => {
       const savedDraft = localStorage.getItem(draftKey);
       
       if (savedDraft) {
-        setEditingClinicalData(JSON.parse(savedDraft)); // Load nháp
+        setEditingClinicalData(JSON.parse(savedDraft));
       } else {
-        setEditingClinicalData(JSON.parse(JSON.stringify(selectedRecord.clinicalData))); // Load gốc
+        setEditingClinicalData(JSON.parse(JSON.stringify(selectedRecord.clinicalData)));
       }
+      // QUAN TRỌNG: Đánh dấu ID này đã nạp xong vào state
+      lastLoadedId.current = selectedRecord.id;
     } else {
       setEditingClinicalData(null);
+      lastLoadedId.current = null;
     }
-  }, [selectedRecord]);
+  }, [selectedRecord?.id]); // Chỉ chạy khi thực sự đổi ID
 
-  // --- TÍNH NĂNG TỰ ĐỘNG LƯU NHÁP (CACHE) KHI ĐANG GÕ ---
+  // --- CHỈNH SỬA: TÍNH NĂNG TỰ ĐỘNG LƯU NHÁP (CACHE) - CHỐNG NHẢY Ô ---
   useEffect(() => {
-    if (selectedRecord && editingClinicalData) {
+    // CHỐT CHẶN: Chỉ lưu nếu ID trong State khớp với ID của hồ sơ đang chọn
+    if (selectedRecord && editingClinicalData && lastLoadedId.current === selectedRecord.id) {
       const draftKey = `draft_clinical_${selectedRecord.id}`;
       if (JSON.stringify(editingClinicalData) !== JSON.stringify(selectedRecord.clinicalData)) {
         localStorage.setItem(draftKey, JSON.stringify(editingClinicalData));
       }
     }
-  }, [editingClinicalData, selectedRecord]);
+  }, [editingClinicalData, selectedRecord?.id]);
 
   const handleLogin = (e: React.FormEvent) => { 
     e.preventDefault(); 
@@ -117,6 +121,7 @@ export const AdminPanel: React.FC = () => {
       alert('Mật khẩu không đúng!'); 
     } 
   };
+  
   const handleUpdateSettings = (e: React.FormEvent) => { e.preventDefault(); const val = parseInt(newCounter, 10); if (!isNaN(val) && val >= 0) { setSequenceCounter(val); setCurrentCounter(val); } setGoogleScriptUrl(scriptUrl.trim()); showNotification('Đã lưu cấu hình hệ thống thành công!'); };
   
   const handleBackupToDrive = async () => {
@@ -133,7 +138,6 @@ export const AdminPanel: React.FC = () => {
   const handleClearAll = () => { if(dataSource==='cloud') return; if (prompt("Nhập 'XOA' để xóa toàn bộ Local DB:") === 'XOA') { clearAllRecords(); refreshData(); showNotification('Đã xóa sạch DB!', 'success'); } };
   const handleGenerateData = () => { if (confirm("Tạo hồ sơ giả?")) { generateTestData(); refreshData(); showNotification("Đã tạo Data giả!"); } };
 
-  // --- CẬP NHẬT: XÓA CACHE SAU KHI LƯU CLOUD ---
   const handleSyncToCloud = async () => {
     if (!selectedRecord) return;
     const url = getGoogleScriptUrl();
@@ -146,7 +150,7 @@ export const AdminPanel: React.FC = () => {
     
     const result = await syncRecordToCloud(recordToSync, url);
     if (result.success) { 
-      localStorage.removeItem(`draft_clinical_${selectedRecord.id}`); // XÓA NHÁP
+      localStorage.removeItem(`draft_clinical_${selectedRecord.id}`); 
       setSyncStatus('success'); 
       setTimeout(refreshData, 1000); 
       showNotification('Đồng bộ thành công!'); 
@@ -163,13 +167,12 @@ export const AdminPanel: React.FC = () => {
       showNotification('Đồng bộ hoàn tất!', 'success');
   };
 
-  // --- CẬP NHẬT: XÓA CACHE SAU KHI LƯU LOCAL ---
   const handleSaveClinicalData = async () => {
     if (selectedRecord && editingClinicalData) {
       const updatedRecord = { ...selectedRecord, clinicalData: editingClinicalData };
       if (dataSource === 'local') {
           saveRecord(updatedRecord.profile, updatedRecord.surveyData, editingClinicalData, updatedRecord.asScores);
-          localStorage.removeItem(`draft_clinical_${selectedRecord.id}`); // XÓA NHÁP
+          localStorage.removeItem(`draft_clinical_${selectedRecord.id}`); 
           refreshData();
           showNotification("Đã lưu Local!");
       } else {
@@ -207,7 +210,6 @@ export const AdminPanel: React.FC = () => {
     return <span className="text-red-600 font-medium text-xs">{highest.slice(0, 1).join(', ')}</span>;
   };
 
-  // BÓC TÁCH DỮ LIỆU FILE CSV THÔNG MINH
   const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>, phase: 'pre' | 'postImmediate' | 'post10Min') => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -261,22 +263,16 @@ export const AdminPanel: React.FC = () => {
     e.target.value = '';
   };
 
-
-  // --- CHỈNH SỬA 2: NÂNG CẤP BỘ LỌC ĐỂ KẾT HỢP TÌM KIẾM VÀ LỌC THIẾU THỜI GIAN ---
- // LỌC DỮ LIỆU AN TOÀN - CHỐNG LỖI MÀN HÌNH TRẮNG
+  // LỌC DỮ LIỆU AN TOÀN - CHỐNG LỖI MÀN HÌNH TRẮNG
   const filteredRecords = (records || []).filter(r => {
-    // 1. Kiểm tra khớp từ khóa tìm kiếm (bọc thêm check để tránh lỗi profile null)
     const fullName = r.profile?.fullName || '';
     const patientCode = r.profile?.patientCode || '';
     const matchSearch = fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
                         patientCode.toLowerCase().includes(searchTerm.toLowerCase());
     
-    // 2. Kiểm tra khớp bộ lọc trạng thái
     let matchFilter = true;
     if (filterStatus === 'missing_time') {
       const time = r.clinicalData?.cuppingMarkTime;
-      // SỬA LỖI TẠI ĐÂY: Dùng String(time) để ép kiểu về chuỗi trước khi trim
-      // Nếu time là null hoặc undefined, !time sẽ đúng -> hiện ra người thiếu
       matchFilter = !time || String(time).trim() === ''; 
     }
 
@@ -326,9 +322,7 @@ export const AdminPanel: React.FC = () => {
                     <div className={`${selectedRecord ? 'w-1/3 hidden md:flex' : 'w-full flex'} flex-col border-r border-gray-200 bg-white transition-all duration-300`}>
                        <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
                          
-                         {/* --- CHỈNH SỬA 3: THÊM SELECT BỘ LỌC VÀO THANH CÔNG CỤ TÌM KIẾM --- */}
                          <div className="flex flex-col xl:flex-row gap-2 mb-2">
-                           {/* Thanh Tìm kiếm */}
                            <div className="relative flex-1">
                               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500" size={18} />
                               <input 
@@ -340,7 +334,6 @@ export const AdminPanel: React.FC = () => {
                               />
                            </div>
                            
-                           {/* Hộp chọn Bộ lọc (Dropdown) */}
                            <select 
                              className="py-2 px-3 text-sm font-medium border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white shadow-sm text-gray-700 cursor-pointer xl:w-48"
                              value={filterStatus}
@@ -350,7 +343,6 @@ export const AdminPanel: React.FC = () => {
                              <option value="missing_time">⚠️ Thiếu TG Mất Vết</option>
                            </select>
                          </div>
-                         {/* --- KẾT THÚC CHỈNH SỬA 3 --- */}
                          
                          <div className="flex flex-wrap gap-2">
                            {dataSource === 'local' && (
@@ -360,7 +352,6 @@ export const AdminPanel: React.FC = () => {
                                </Button>
                            )}
                            
-                           {/* --- NÚT TẢI CSV GỘP CHUNG (MỞ MODAL) --- */}
                            <Button variant="primary" onClick={() => setShowExportModal(true)} className="!py-1.5 !px-3 text-xs bg-emerald-600 hover:bg-emerald-700 border-emerald-600 flex-1 justify-center whitespace-nowrap">
                               <Download size={14} /> Xuất file CSV
                            </Button>
@@ -577,7 +568,6 @@ export const AdminPanel: React.FC = () => {
                 )}
                 {notification && <div className={`fixed bottom-6 right-6 px-6 py-3 rounded-lg shadow-xl text-white z-[60] ${notification.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>{notification.message}</div>}
                 
-                {/* --- BẢNG MODAL CHỌN TRƯỜNG DỮ LIỆU ĐỂ TẢI CSV --- */}
                 {showExportModal && (
                   <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
