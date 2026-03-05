@@ -7,7 +7,7 @@ import {
 } from '../services/storageService';
 import { calculateASScores, getHighestScores } from '../services/scoreService';
 import { calculateClinicalIndices } from '../services/indicesService'; 
-import { generateCustomCSV, ExportOptions } from '../services/csvService';
+import { generateCustomCSV, ExportOptions } from '../services/csvService'; 
 import { Button } from './Button';
 import { SurveyRecord, ClinicalData } from '../types';
 import { CCMQ_QUESTIONS, ANSWER_OPTIONS } from '../constants';
@@ -25,8 +25,6 @@ export const AdminPanel: React.FC = () => {
   const [records, setRecords] = useState<SurveyRecord[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'missing_time'>('all'); 
-  
   const [selectedRecord, setSelectedRecord] = useState<SurveyRecord | null>(null);
   const [editingClinicalData, setEditingClinicalData] = useState<ClinicalData | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
@@ -37,7 +35,10 @@ export const AdminPanel: React.FC = () => {
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportOptions, setExportOptions] = useState<ExportOptions>({
-    personalInfo: true, clinicalIndices: true, redGreenDetails: true, surveyDetails: true
+    personalInfo: true,
+    clinicalIndices: true,
+    redGreenDetails: true,
+    surveyDetails: true
   });
 
   const handleOpen = () => { setIsOpen(true); refreshData(); };
@@ -56,13 +57,15 @@ export const AdminPanel: React.FC = () => {
         const allRecords = getRecords().sort((a, b) => b.profile.sequenceNumber - a.profile.sequenceNumber);
         setRecords(allRecords);
     } else {
-        if (!url) { setDataSource('local'); return; }
+        if (!url) { showNotification("Chưa cấu hình Google Script URL!", 'error'); setDataSource('local'); return; }
         setIsLoadingCloud(true);
         const result = await fetchRecordsFromCloud(url);
         setIsLoadingCloud(false);
         if (result.success && result.data) {
-            setRecords(result.data.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+            const sorted = result.data.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            setRecords(sorted);
         } else {
+            showNotification(`Lỗi tải dữ liệu Cloud: ${result.message}`, 'error');
             setDataSource('local');
         }
     }
@@ -72,18 +75,18 @@ export const AdminPanel: React.FC = () => {
 
   useEffect(() => { if (isOpen && isAuthenticated) refreshData(); }, [dataSource]);
 
-  // --- THAY ĐỔI QUAN TRỌNG: CHỈ NẠP DỮ LIỆU GỐC, KHÔNG CÓ CACHE ---
+  // --- CHỈNH SỬA: CHỈ NẠP DỮ LIỆU GỐC KHI CHỌN HỒ SƠ, KHÔNG CÓ CACHE NHÁP ---
   useEffect(() => {
     setSyncStatus('idle');
     if (selectedRecord) {
-      // Chỉ đơn giản là copy dữ liệu từ hồ sơ gốc vào ô nhập liệu
-      setEditingClinicalData(JSON.parse(JSON.stringify(selectedRecord.clinicalData || {})));
+        // Nạp bản sao dữ liệu lâm sàng từ hồ sơ đang chọn
+        setEditingClinicalData(JSON.parse(JSON.stringify(selectedRecord.clinicalData || {})));
     } else {
-      setEditingClinicalData(null);
+        setEditingClinicalData(null);
     }
-  }, [selectedRecord?.id]); 
+  }, [selectedRecord?.id]); // Chỉ chạy lại khi đổi ID hồ sơ
 
-  // (ĐÃ XÓA useEffect TỰ ĐỘNG LƯU NHÁP Ở ĐÂY)
+  // (ĐÃ XÓA useEffect TỰ ĐỘNG LƯU NHÁP VÀO LOCALSTORAGE ĐỂ TRÁNH LỖI ĐÈ DỮ LIỆU)
 
   const handleLogin = (e: React.FormEvent) => { 
     e.preventDefault(); 
@@ -91,49 +94,61 @@ export const AdminPanel: React.FC = () => {
       setIsAuthenticated(true); 
       setPassword(''); 
       sessionStorage.setItem('isAdmin', 'true'); 
-    } else { alert('Mật khẩu không đúng!'); } 
+    } else { 
+      alert('Mật khẩu không đúng!'); 
+    } 
   };
-
-  const handleUpdateSettings = (e: React.FormEvent) => { e.preventDefault(); const val = parseInt(newCounter, 10); if (!isNaN(val)) setSequenceCounter(val); setGoogleScriptUrl(scriptUrl.trim()); showNotification('Đã lưu cấu hình!'); refreshData(); };
+  const handleUpdateSettings = (e: React.FormEvent) => { e.preventDefault(); const val = parseInt(newCounter, 10); if (!isNaN(val) && val >= 0) { setSequenceCounter(val); setCurrentCounter(val); } setGoogleScriptUrl(scriptUrl.trim()); showNotification('Đã lưu cấu hình hệ thống thành công!'); };
   
   const handleBackupToDrive = async () => {
     const url = getGoogleScriptUrl();
-    if (!url || records.length === 0) return alert("Kiểm tra URL hoặc dữ liệu!");
+    if (!url || getRecords().length === 0) return alert("Kiểm tra URL hoặc dữ liệu trống!");
+    if (!confirm("Backup CSV lên Drive?")) return;
     setIsBackingUp(true);
     const result = await backupDataToCloud(url);
     setIsBackingUp(false);
-    result.success ? showNotification("Backup thành công!") : showNotification(`Lỗi: ${result.message}`, 'error');
+    result.success ? showNotification("Backup thành công!", 'success') : showNotification(`Lỗi: ${result.message}`, 'error');
   };
 
-  const handleDeleteRecord = (id: string, name: string) => { if(dataSource === 'cloud') return alert("Xóa trên Sheet!"); if (confirm(`Xóa ${name}?`)) { deleteRecord(id); refreshData(); } };
-  const handleClearAll = () => { if (prompt("Nhập 'XOA' để xóa:") === 'XOA') { clearAllRecords(); refreshData(); } };
+  const handleDeleteRecord = (id: string, name: string) => { if(dataSource === 'cloud') return alert("Vui lòng xóa trên Sheet!"); if (confirm(`Xóa ${name}?`)) { deleteRecord(id); refreshData(); if (selectedRecord?.id === id) setSelectedRecord(null); showNotification(`Đã xóa ${name}`); } };
+  const handleClearAll = () => { if(dataSource==='cloud') return; if (prompt("Nhập 'XOA' để xóa toàn bộ Local DB:") === 'XOA') { clearAllRecords(); refreshData(); showNotification('Đã xóa sạch DB!', 'success'); } };
+  const handleGenerateData = () => { if (confirm("Tạo hồ sơ giả?")) { generateTestData(); refreshData(); showNotification("Đã tạo Data giả!"); } };
 
   const handleSyncToCloud = async () => {
     if (!selectedRecord || !editingClinicalData) return;
     const url = getGoogleScriptUrl();
+    if (!url) return alert("Chưa có URL!");
     setSyncStatus('syncing');
+    
     const recordToSync = { ...selectedRecord, clinicalData: editingClinicalData };
     if (!recordToSync.asScores) recordToSync.asScores = calculateASScores(recordToSync.surveyData);
     
-    // Lưu Local trước khi đẩy Cloud
+    // Luôn lưu vào Local trước khi đồng bộ Cloud
     saveRecord(recordToSync.profile, recordToSync.surveyData, editingClinicalData, recordToSync.asScores);
     
     const result = await syncRecordToCloud(recordToSync, url);
     if (result.success) { 
       setSyncStatus('success'); 
+      setTimeout(refreshData, 1000); 
       showNotification('Đồng bộ thành công!'); 
-      refreshData();
-    } else { 
-      setSyncStatus('error'); 
-      showNotification(`Lỗi: ${result.message}`, 'error'); 
-    }
+    } 
+    else { setSyncStatus('error'); showNotification(`Lỗi: ${result.message}`, 'error'); }
+  };
+
+  const handleSyncAll = async () => { 
+      const url = getGoogleScriptUrl();
+      if (!url || !confirm(`Đồng bộ ${records.length} hồ sơ?`)) return;
+      setIsSyncingAll(true);
+      for (const rec of records) { await syncRecordToCloud(rec, url); await new Promise(r => setTimeout(r, 300)); }
+      setIsSyncingAll(false);
+      showNotification('Đồng bộ hoàn tất!', 'success');
   };
 
   const handleSaveClinicalData = async () => {
     if (selectedRecord && editingClinicalData) {
-      saveRecord(selectedRecord.profile, selectedRecord.surveyData, editingClinicalData, selectedRecord.asScores);
-      refreshData();
-      showNotification("Đã lưu Local!");
+        saveRecord(selectedRecord.profile, selectedRecord.surveyData, editingClinicalData, selectedRecord.asScores);
+        refreshData();
+        showNotification("Đã lưu Local!");
     }
   };
 
@@ -143,14 +158,27 @@ export const AdminPanel: React.FC = () => {
       if (!prev) return null;
       const currentPhase = prev[phase] || {};
       const newPhaseData = { ...currentPhase, [`${type}_${point}`]: value };
-      const g = type === 'green' ? value : (newPhaseData as any)[`green_${point}`];
-      const r = type === 'red' ? value : (newPhaseData as any)[`red_${point}`];
-      const { ei, mi, ri } = calculateClinicalIndices(r, g);
+      const greenVal = type === 'green' ? value : (newPhaseData as any)[`green_${point}`];
+      const redVal = type === 'red' ? value : (newPhaseData as any)[`red_${point}`];
+      const { ei, mi, ri } = calculateClinicalIndices(redVal, greenVal);
       (newPhaseData as any)[`ei_${point}`] = ei;
       (newPhaseData as any)[`mi_${point}`] = mi;
       (newPhaseData as any)[`ri_${point}`] = ri;
       return { ...prev, [phase]: newPhaseData };
     });
+  };
+
+  const handleFileChange = (phase: string, val: string) => {
+      if (editingClinicalData) setEditingClinicalData({...editingClinicalData, [phase]: {...((editingClinicalData as any)[phase] || {}), file: val}});
+  };
+
+  const getRecordSummary = (rec: SurveyRecord) => {
+    const scores = rec.asScores || calculateASScores(rec.surveyData);
+    const highest = getHighestScores(scores);
+    if (scores.binhHoa >= 60 && highest.every(h => !h.includes("Bình hòa") ? parseInt(h.match(/\d+/)?.[0] || '0') < 40 : true)) {
+       return <span className="text-emerald-600 font-bold text-xs">Bình hòa ({scores.binhHoa})</span>;
+    }
+    return <span className="text-red-600 font-medium text-xs">{highest.slice(0, 1).join(', ')}</span>;
   };
 
   const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>, phase: 'pre' | 'postImmediate' | 'post10Min') => {
@@ -160,166 +188,333 @@ export const AdminPanel: React.FC = () => {
     reader.onload = (event) => {
       const text = event.target?.result as string;
       const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      const header = lines[0].split(',').map(h => h.trim().replace(/["']/g, ""));
-      const labelIdx = header.indexOf('Label');
-      const meanIdx = header.indexOf('Mean');
-      const reds: number[] = []; const greens: number[] = [];
-      lines.slice(1).forEach(line => {
-        const c = line.split(',');
-        const label = c[labelIdx]?.replace(/["']/g, "");
-        const mean = parseFloat(c[meanIdx]);
-        if (label === 'Red') reds.push(mean);
-        if (label === 'Green') greens.push(mean);
-      });
+      if (lines.length < 2) return showNotification('File CSV trống hoặc không hợp lệ!', 'error');
+
+      const headerCells = lines[0].split(',').map(h => h.trim().replace(/["']/g, ""));
+      const labelIndex = headerCells.findIndex(h => h === 'Label');
+      const meanIndex = headerCells.findIndex(h => h === 'Mean');
+      if (labelIndex === -1 || meanIndex === -1) return showNotification('Không tìm thấy cột "Label" hoặc "Mean"!', 'error');
+
+      const reds: number[] = [];
+      const greens: number[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cells = lines[i].split(',');
+        if (cells.length > Math.max(labelIndex, meanIndex)) {
+          const label = cells[labelIndex].trim().replace(/["']/g, ""); 
+          const mean = parseFloat(cells[meanIndex]); 
+          if (label === 'Red' && !isNaN(mean)) reds.push(mean);
+          if (label === 'Green' && !isNaN(mean)) greens.push(mean);
+        }
+      }
+
       if (reds.length >= 4 && greens.length >= 4) {
         setEditingClinicalData(prev => {
-          if (!prev) return null;
-          const newPhase = { ...(prev[phase] || {}) };
-          ['bl23_l', 'bl23_r', 'bl25_l', 'bl25_r'].forEach((pt, i) => {
-            const r = reds[i].toFixed(3); const g = greens[i].toFixed(3);
-            (newPhase as any)[`red_${pt}`] = r; (newPhase as any)[`green_${pt}`] = g;
-            const { ei, mi, ri } = calculateClinicalIndices(r, g);
-            (newPhase as any)[`ei_${pt}`] = ei; (newPhase as any)[`mi_${pt}`] = mi; (newPhase as any)[`ri_${pt}`] = ri;
+          if (!prev) return prev;
+          const currentPhase = prev[phase] || {};
+          const newPhaseData = { ...currentPhase };
+          const points = ['bl23_l', 'bl23_r', 'bl25_l', 'bl25_r'];
+          points.forEach((point, idx) => {
+            const redVal = reds[idx].toFixed(3);
+            const greenVal = greens[idx].toFixed(3);
+            (newPhaseData as any)[`red_${point}`] = redVal;
+            (newPhaseData as any)[`green_${point}`] = greenVal;
+            const { ei, mi, ri } = calculateClinicalIndices(redVal, greenVal);
+            (newPhaseData as any)[`ei_${point}`] = ei;
+            (newPhaseData as any)[`mi_${point}`] = mi;
+            (newPhaseData as any)[`ri_${point}`] = ri;
           });
-          return { ...prev, [phase]: newPhase };
+          return { ...prev, [phase]: newPhaseData };
         });
+        showNotification(`Đã trích xuất thành công dữ liệu CSV!`, 'success');
+      } else {
+        showNotification('File CSV không đủ 4 vùng dữ liệu Red/Green!', 'error');
       }
     };
     reader.readAsText(file);
     e.target.value = '';
   };
 
-  const filteredRecords = (records || []).filter(r => {
-    const fullName = r.profile?.fullName || '';
-    const patientCode = r.profile?.patientCode || '';
-    const matchSearch = fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                        patientCode.toLowerCase().includes(searchTerm.toLowerCase());
-    let matchFilter = true;
-    if (filterStatus === 'missing_time') {
-      const time = r.clinicalData?.cuppingMarkTime;
-      matchFilter = !time || String(time).trim() === ''; 
-    }
-    return matchSearch && matchFilter;
-  });
-
+  const filteredRecords = records.filter(r => r.profile.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || r.profile.patientCode.toLowerCase().includes(searchTerm.toLowerCase()));
   const totalPages = Math.max(1, Math.ceil(filteredRecords.length / recordsPerPage));
-  const paginatedRecords = filteredRecords.slice((currentPage - 1) * recordsPerPage, currentPage * recordsPerPage);
+  const startIndex = (currentPage - 1) * recordsPerPage;
+  const paginatedRecords = filteredRecords.slice(startIndex, startIndex + recordsPerPage);
+  const goToPage = (page: number) => { if (page >= 1 && page <= totalPages) setCurrentPage(page); };
+  
+  const inputClasses = "w-full px-4 py-2 border border-gray-400 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
+  const clinicalInputClasses = "bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block w-full p-2";
 
-  if (!isOpen) return <button onClick={handleOpen} className="fixed bottom-4 left-4 p-2 text-gray-400 hover:text-gray-600 bg-white rounded-full shadow-sm border border-gray-200 z-40"><Settings size={20} /></button>;
+  if (!isOpen) return <button onClick={handleOpen} className="fixed bottom-4 left-4 p-2 text-gray-400 hover:text-gray-600 bg-white rounded-full shadow-sm border border-gray-200 transition-colors z-40"><Settings size={20} /></button>;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className={`bg-white rounded-xl shadow-2xl w-full ${isAuthenticated ? 'max-w-6xl h-[90vh]' : 'max-w-md'} flex flex-col overflow-hidden`}>
-        <div className="bg-gray-900 px-6 py-4 flex justify-between items-center text-white shrink-0">
-          <h3 className="font-semibold flex items-center gap-2"><Settings size={20} className="text-blue-400" /> Quản trị hệ thống</h3>
-          <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-white"><X size={24} /></button>
+      <div className={`bg-white rounded-xl shadow-2xl w-full ${isAuthenticated ? 'max-w-6xl h-[90vh]' : 'max-w-md'} flex flex-col overflow-hidden transition-all duration-300 relative`}>
+        {/* Header */}
+        <div className="bg-gray-900 px-6 py-4 flex justify-between items-center text-white shrink-0 shadow-md">
+          <h3 className="font-semibold flex items-center gap-2 text-lg"><Settings size={20} className="text-blue-400" /> Quản trị hệ thống</h3>
+          <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-white transition-colors p-1 rounded-full hover:bg-gray-800"><X size={24} /></button>
         </div>
 
         <div className="flex-1 overflow-hidden p-0 bg-gray-50 flex flex-col relative">
           {!isAuthenticated ? (
-             <div className="p-8 flex-1 flex items-center">
-               <form onSubmit={handleLogin} className="space-y-6 w-full">
-                 <h2 className="text-xl font-bold text-center">Đăng nhập Quản trị</h2>
-                 <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-3 border rounded-lg" placeholder="Nhập mật khẩu..." autoFocus />
-                 <Button type="submit" className="w-full py-3">Truy cập</Button>
-               </form>
-             </div>
+             <div className="p-8 flex-1 flex items-center"><form onSubmit={handleLogin} className="space-y-6 w-full"><div className="text-center mb-6"><div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3"><Lock className="text-blue-600" size={32} /></div><h2 className="text-xl font-bold text-gray-800">Đăng nhập Quản trị</h2></div><div><label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label><div className="relative"><Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" placeholder="Nhập mật khẩu..." autoFocus /></div></div><Button type="submit" className="w-full py-3 text-base">Truy cập</Button></form></div>
           ) : (
-            <div className="flex flex-col h-full">
-              <div className="flex border-b bg-white shrink-0 items-center justify-between pr-4">
+            <div className="flex flex-col h-full relative">
+              {/* Tabs */}
+              <div className="flex border-b border-gray-200 bg-white shrink-0 items-center justify-between pr-4">
                  <div className="flex">
-                    <button onClick={() => setActiveTab('settings')} className={`px-6 py-4 text-sm font-medium ${activeTab === 'settings' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Cấu hình</button>
-                    <button onClick={() => { setActiveTab('database'); refreshData(); }} className={`px-6 py-4 text-sm font-medium ${activeTab === 'database' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Dữ liệu</button>
+                    <button onClick={() => setActiveTab('settings')} className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-all border-b-2 ${activeTab === 'settings' ? 'border-blue-600 text-blue-600 bg-blue-50/50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><Settings size={18} /> Cấu hình</button>
+                    <button onClick={() => { setActiveTab('database'); refreshData(); }} className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-all border-b-2 ${activeTab === 'database' ? 'border-blue-600 text-blue-600 bg-blue-50/50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><Database size={18} /> Dữ liệu ({records.length})</button>
                  </div>
-                 {activeTab === 'database' && (
-                    <div className="flex bg-gray-100 rounded-lg p-1 border">
-                      <button onClick={() => setDataSource('local')} className={`px-3 py-1 text-xs font-bold rounded ${dataSource === 'local' ? 'bg-white shadow-sm' : 'text-gray-500'}`}>Local</button>
-                      <button onClick={() => setDataSource('cloud')} className={`px-3 py-1 text-xs font-bold rounded ${dataSource === 'cloud' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>Cloud</button>
-                    </div>
-                 )}
+                 {activeTab === 'database' && (<div className="flex items-center bg-gray-100 rounded-lg p-1 border border-gray-200"><button onClick={() => setDataSource('local')} className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-2 transition-all ${dataSource === 'local' ? 'bg-white text-gray-800 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'}`}><Database size={14} /> Local</button><button onClick={() => setDataSource('cloud')} className={`px-3 py-1.5 text-xs font-bold rounded-md flex items-center gap-2 transition-all ${dataSource === 'cloud' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><Cloud size={14} /> Cloud</button></div>)}
               </div>
 
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 overflow-hidden relative">
                 {activeTab === 'settings' && ( 
-                  <div className="h-full overflow-y-auto p-8 max-w-xl mx-auto space-y-6">
-                    <div className="bg-white p-6 rounded-xl border">
-                      <h4 className="font-bold mb-4">Cài đặt hệ thống</h4>
-                      <form onSubmit={handleUpdateSettings} className="space-y-4">
-                        <div><label className="text-xs font-bold">Số STT tiếp theo</label><input type="number" value={newCounter} onChange={(e) => setNewCounter(e.target.value)} className="w-full p-2 border rounded" /></div>
-                        <div><label className="text-xs font-bold">Google Script URL</label><input type="text" value={scriptUrl} onChange={(e) => setScriptUrl(e.target.value)} className="w-full p-2 border rounded font-mono text-xs" /></div>
-                        <Button type="submit" className="w-full">Lưu cấu hình</Button>
-                      </form>
-                      <Button onClick={handleBackupToDrive} disabled={isBackingUp} className="w-full mt-4 bg-green-600">{isBackingUp ? "Đang backup..." : "Backup CSV lên Drive"}</Button>
-                    </div>
-                  </div>
+                  <div className="h-full overflow-y-auto p-8"><div className="max-w-xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-gray-200"><h4 className="text-xl font-bold mb-6 text-gray-800 border-b pb-2">Cài đặt Hệ thống</h4><form onSubmit={handleUpdateSettings} className="space-y-6"><div className="bg-blue-50 p-4 rounded-lg text-blue-800 text-sm border border-blue-100 flex items-start gap-3"><div className="bg-blue-200 p-2 rounded-full text-blue-700"><RefreshCw size={16}/></div><div><p className="font-bold text-base mb-1">Bộ đếm STT hiện tại</p><p>Tiếp theo: <strong className="text-xl">{currentCounter + 1}</strong></p></div></div><div><label className="block text-sm font-medium text-gray-700 mb-2">Đặt lại STT</label><input type="number" value={newCounter} onChange={(e) => setNewCounter(e.target.value)} className={inputClasses} min="0" /></div><hr className="my-4 border-gray-100" /><div><label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2"><Cloud size={18} className="text-blue-500" /> Apps Script URL</label><div className="flex gap-2"><input type="text" value={scriptUrl} onChange={(e) => setScriptUrl(e.target.value)} placeholder="https://script.google.com/..." className={`${inputClasses} text-sm font-mono text-gray-600 flex-1`} /><Button type="button" onClick={handleBackupToDrive} disabled={isBackingUp} className="bg-green-600 hover:bg-green-700 shrink-0 text-xs px-3">{isBackingUp ? <RefreshCw size={16} className="animate-spin" /> : <HardDriveUpload size={16} />}</Button></div></div><div className="pt-4"><Button type="submit" className="w-full justify-center"><Save size={18} /> Lưu Cấu hình</Button></div></form></div></div>
                 )}
 
                 {activeTab === 'database' && (
                   <div className="flex h-full">
-                    {/* Sidebar */}
-                    <div className={`${selectedRecord ? 'w-1/3 hidden md:flex' : 'w-full flex'} flex-col border-r bg-white`}>
-                       <div className="p-4 bg-gray-50 border-b space-y-2">
-                         <div className="flex gap-2">
-                            <input type="text" placeholder="Tìm tên/mã..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} className="flex-1 p-2 text-sm border rounded" />
-                            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as any)} className="text-xs border rounded px-1">
-                              <option value="all">Tất cả</option><option value="missing_time">Thiếu TG</option>
-                            </select>
+                    <div className={`${selectedRecord ? 'w-1/3 hidden md:flex' : 'w-full flex'} flex-col border-r border-gray-200 bg-white transition-all duration-300`}>
+                       <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
+                         <div className="relative mb-2">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500" size={18} />
+                            <input 
+                                type="text" 
+                                placeholder="Tìm kiếm theo Tên hoặc Mã BN..." 
+                                className="w-full pl-10 pr-4 py-2.5 text-sm font-medium border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white shadow-sm transition-all placeholder-gray-400" 
+                                value={searchTerm} 
+                                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} 
+                            />
                          </div>
-                         <Button onClick={() => setShowExportModal(true)} className="w-full bg-emerald-600 text-xs py-1.5">Xuất CSV</Button>
+                         
+                         <div className="flex flex-wrap gap-2">
+                           {dataSource === 'local' && (
+                               <Button variant="primary" onClick={handleSyncAll} disabled={isSyncingAll} className="!py-1.5 !px-3 text-xs bg-blue-600 hover:bg-blue-700 border-blue-600 flex-1 justify-center whitespace-nowrap">
+                                {isSyncingAll ? <RefreshCw size={14} className="animate-spin" /> : <CloudLightning size={14} />} 
+                                {isSyncingAll ? 'Đang gửi...' : 'Đẩy Local -> Cloud'}
+                               </Button>
+                           )}
+                           
+                           <Button variant="primary" onClick={() => setShowExportModal(true)} className="!py-1.5 !px-3 text-xs bg-emerald-600 hover:bg-emerald-700 border-emerald-600 flex-1 justify-center whitespace-nowrap">
+                              <Download size={14} /> Xuất file CSV
+                           </Button>
+                         </div>
+                         
+                         {dataSource === 'local' ? (
+                            <div className="flex gap-2">
+                                <Button variant="secondary" onClick={handleGenerateData} className="!py-1.5 !px-3 text-xs bg-yellow-500 text-white hover:bg-yellow-600 border-yellow-500 flex-1 justify-center"><Zap size={14} /> Fake Data</Button>
+                                <Button variant="outline" onClick={handleClearAll} className="!py-1.5 !px-3 text-xs text-red-600 border-red-600 hover:bg-red-50 flex-1 justify-center"><Trash2 size={14} /> Xóa Local</Button>
+                            </div>
+                         ) : (
+                             <div className="flex gap-2">
+                                <Button variant="secondary" onClick={refreshData} className="!py-1.5 !px-3 text-xs bg-blue-500 text-white hover:bg-blue-600 border-blue-500 flex-full justify-center">
+                                    {isLoadingCloud ? <RefreshCw size={14} className="animate-spin" /> : <Globe size={14} />} 
+                                    {isLoadingCloud ? 'Đang tải...' : 'Làm mới dữ liệu Cloud'}
+                                </Button>
+                             </div>
+                         )}
                        </div>
+
                        <div className="flex-1 overflow-y-auto">
                          {paginatedRecords.map(rec => (
-                           <div key={rec.id} onClick={() => setSelectedRecord(rec)} className={`p-3 border-b cursor-pointer hover:bg-blue-50 ${selectedRecord?.id === rec.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''}`}>
-                             <div className="flex justify-between font-bold text-sm"><span>{rec.profile?.fullName}</span><span className="text-gray-400 font-mono text-xs">{rec.profile?.patientCode}</span></div>
-                             <div className="text-[10px] text-gray-500 mt-1">{new Date(rec.timestamp).toLocaleDateString('vi-VN')}</div>
+                           <div key={rec.id} onClick={() => setSelectedRecord(rec)} className={`p-4 cursor-pointer hover:bg-blue-50 ${selectedRecord?.id === rec.id ? 'bg-blue-50 border-l-4 border-blue-600' : 'border-l-4 border-transparent'}`}>
+                             <div className="flex justify-between items-start">
+                               <span className="font-bold text-gray-800 text-sm">{rec.profile.fullName}</span>
+                               <div className="flex items-center gap-2">
+                                 <span className="text-xs font-mono bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">{rec.profile.patientCode}</span>
+                                 {dataSource === 'local' && <button onClick={(e) => { e.stopPropagation(); handleDeleteRecord(rec.id, rec.profile.fullName); }} className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14} /></button>}
+                               </div>
+                             </div>
+                             <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                               <span>{new Date(rec.timestamp).toLocaleDateString('vi-VN')}</span>
+                               {getRecordSummary(rec)}
+                             </div>
                            </div>
                          ))}
                        </div>
+
+                       {filteredRecords.length > 0 && (
+                        <div className="p-3 bg-white border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between shrink-0 shadow-sm z-10 gap-2">
+                          <div className="flex items-center gap-2">
+                             <span className="text-xs text-gray-500">Hiển thị:</span>
+                             <select value={recordsPerPage} onChange={(e) => { setRecordsPerPage(Number(e.target.value)); setCurrentPage(1); }} className="text-xs border border-gray-300 rounded p-1 focus:ring-blue-500 outline-none cursor-pointer">
+                               <option value={5}>5 dòng</option>
+                               <option value={10}>10 dòng</option>
+                               <option value={20}>20 dòng</option>
+                               <option value={40}>40 dòng</option>
+                               <option value={50}>50 dòng</option>
+                             </select>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white transition-colors text-gray-600"><ChevronLeft size={20}/></button>
+                            <div className="flex flex-col items-center">
+                              <span className="text-xs font-bold text-gray-700">Trang {currentPage}/{totalPages}</span>
+                              <span className="text-[10px] text-gray-500 mt-0.5">{startIndex + 1}-{Math.min(currentPage * recordsPerPage, filteredRecords.length)}/{filteredRecords.length}</span>
+                            </div>
+                            <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages} className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white transition-colors text-gray-600"><ChevronRight size={20}/></button>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Chi tiết */}
-                    <div className={`${selectedRecord ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-white overflow-hidden`}>
+                    <div className={`${selectedRecord ? 'flex' : 'hidden md:flex'} w-full md:w-2/3 flex-col bg-gray-50 h-full overflow-hidden`}>
                       {selectedRecord && editingClinicalData ? (
-                        <>
-                          <div className="p-4 border-b flex justify-between items-center bg-white shadow-sm shrink-0">
-                            <div className="flex items-center gap-2"><button onClick={() => setSelectedRecord(null)} className="md:hidden"><ArrowLeft size={20}/></button><h2 className="font-bold">{selectedRecord.profile?.fullName}</h2></div>
-                            <div className="flex gap-2">
-                              <Button onClick={handleSaveClinicalData} className="bg-blue-600 text-xs px-3 py-1.5">Lưu Local</Button>
-                              <Button onClick={handleSyncToCloud} className="bg-orange-500 text-xs px-3 py-1.5">Lưu Cloud</Button>
-                            </div>
+                        <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
+                          <div className="bg-white p-4 border-b border-gray-200 flex justify-between items-center shadow-sm shrink-0">
+                             <div className="flex items-center gap-3"><button onClick={() => setSelectedRecord(null)} className="md:hidden p-2 -ml-2 text-gray-600"><ArrowLeft size={20} /></button><div><h2 className="text-lg font-bold text-gray-800">{selectedRecord.profile.fullName}</h2></div></div>
+                             <div className="flex gap-2"><Button onClick={handleSaveClinicalData} className="!py-1 !px-3 bg-blue-600"><Save size={14}/> Lưu</Button></div>
                           </div>
-                          <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-gray-50">
-                            {['pre', 'postImmediate', 'post10Min'].map((k) => {
-                              const labels: any = { pre: '1. TRƯỚC (PRE)', postImmediate: '2. NGAY SAU (POST IMM)', post10Min: '3. SAU 10P (POST 10M)' };
-                              return (
-                                <div key={k} className="bg-white p-4 rounded-xl border shadow-sm">
-                                  <div className="flex justify-between border-b pb-2 mb-3 items-center">
-                                    <h6 className="font-bold text-blue-900 text-xs">{labels[k]}</h6>
-                                    <label className="text-[10px] font-bold bg-emerald-600 text-white px-2 py-1 rounded cursor-pointer">CSV ImageJ <input type="file" accept=".csv" className="hidden" onChange={(e) => handleCSVUpload(e, k as any)} /></label>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-4">
-                                     {['bl23_l', 'bl23_r', 'bl25_l', 'bl25_r'].map(pt => (
-                                       <div key={pt} className="p-2 bg-gray-50 rounded border">
-                                          <p className="text-[9px] font-bold text-gray-500 mb-1 text-center">{pt.toUpperCase()}</p>
-                                          <div className="flex gap-2">
-                                            <input type="number" placeholder="G" value={(editingClinicalData as any)[k]?.[`green_${pt}`] || ''} onChange={(e) => handleClinicalInputChange(k as any, pt, 'green', e.target.value)} className="w-full text-xs p-1 border rounded" />
-                                            <input type="number" placeholder="R" value={(editingClinicalData as any)[k]?.[`red_${pt}`] || ''} onChange={(e) => handleClinicalInputChange(k as any, pt, 'red', e.target.value)} className="w-full text-xs p-1 border rounded" />
+
+                          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                            {[
+                              { key: 'pre', label: '1. TRƯỚC (PRE)' },
+                              { key: 'postImmediate', label: '2. NGAY SAU (POST IMM)' },
+                              { key: 'post10Min', label: '3. SAU 10P (POST 10M)' }
+                            ].map((phase: any) => (
+                              <div key={phase.key} className="bg-white p-4 rounded-lg border border-gray-300 shadow-sm">
+                               <div className="flex justify-between items-center mb-3 border-b pb-1">
+                                  <h6 className="font-bold text-blue-900">{phase.label}</h6>
+                                  <label className="cursor-pointer bg-emerald-50 text-emerald-700 px-3 py-1 rounded-md text-xs font-bold border border-emerald-200 hover:bg-emerald-100 flex items-center gap-1.5 transition-colors shadow-sm" title="Tự động điền R, G và tính EI, MI, RI">
+                                    <UploadCloud size={14} /> Tự động bằng CSV
+                                    <input type="file" accept=".csv" className="hidden" onChange={(e) => handleCSVUpload(e, phase.key as 'pre'|'postImmediate'|'post10Min')} />
+                                  </label>
+                               </div>
+                                
+                                <div className="mb-4">
+                                  <label className="text-xs font-bold text-gray-500">File Ảnh:</label>
+                                  <input type="text" className={clinicalInputClasses} placeholder="Tên file..." 
+                                    value={(editingClinicalData as any)[phase.key]?.file || ''} 
+                                    onChange={(e) => handleFileChange(phase.key, e.target.value)} />
+                                </div>
+
+                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                   {[
+                                     { id: 'bl23_l', name: 'Thận Du (Trái)' },
+                                     { id: 'bl23_r', name: 'Thận Du (Phải)' },
+                                     { id: 'bl25_l', name: 'Đại Trường Du (Trái)' },
+                                     { id: 'bl25_r', name: 'Đại Trường Du (Phải)' },
+                                   ].map(point => (
+                                     <div key={point.id} className="border border-gray-200 p-2 rounded bg-gray-50">
+                                       <div className="text-xs font-bold text-center mb-2 text-gray-700">{point.name}</div>
+                                       <div className="grid grid-cols-2 gap-2 mb-2">
+                                          <div>
+                                            <label className="text-[10px] text-green-700 font-bold">Green</label>
+                                            <input type="number" className="w-full p-1 text-sm border rounded" placeholder="G"
+                                              value={(editingClinicalData as any)[phase.key]?.[`green_${point.id}`] || ''}
+                                              onChange={(e) => handleClinicalInputChange(phase.key as any, point.id, 'green', e.target.value)}
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="text-[10px] text-red-700 font-bold">Red</label>
+                                            <input type="number" className="w-full p-1 text-sm border rounded" placeholder="R"
+                                              value={(editingClinicalData as any)[phase.key]?.[`red_${point.id}`] || ''}
+                                              onChange={(e) => handleClinicalInputChange(phase.key as any, point.id, 'red', e.target.value)}
+                                            />
                                           </div>
                                        </div>
-                                     ))}
-                                  </div>
+                                       <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded border border-gray-200">
+                                          <div className="text-center">
+                                            <div className="text-[9px] text-gray-400">EI</div>
+                                            <div className="text-xs font-mono font-bold text-blue-600">
+                                              {(editingClinicalData as any)[phase.key]?.[`ei_${point.id}`] || '-'}
+                                            </div>
+                                          </div>
+                                          <div className="text-center">
+                                            <div className="text-[9px] text-gray-400">MI</div>
+                                            <div className="text-xs font-mono font-bold text-purple-600">
+                                              {(editingClinicalData as any)[phase.key]?.[`mi_${point.id}`] || '-'}
+                                            </div>
+                                          </div>
+                                          <div className="text-center">
+                                            <div className="text-[9px] text-gray-400">RI</div>
+                                            <div className="text-xs font-mono font-bold text-rose-600">
+                                              {(editingClinicalData as any)[phase.key]?.[`ri_${point.id}`] || '-'}
+                                            </div>
+                                          </div>
+                                       </div>
+                                     </div>
+                                   ))}
                                 </div>
-                              );
-                            })}
-                            <div className="bg-white p-4 rounded-xl border shadow-sm">
+                              </div>
+                            ))}
+
+                            <div className="bg-white p-4 rounded border">
                                <label className="font-bold text-sm">Thời gian mất vết giác:</label>
-                               <input type="text" className="w-full mt-2 p-2 border rounded" value={editingClinicalData.cuppingMarkTime || ''} onChange={(e) => setEditingClinicalData({...editingClinicalData, cuppingMarkTime: e.target.value})} />
+                               <input type="text" className="w-full mt-1 p-2 border rounded" 
+                                  value={editingClinicalData.cuppingMarkTime || ''}
+                                  onChange={(e) => setEditingClinicalData({...editingClinicalData, cuppingMarkTime: e.target.value})} />
+                            </div>
+
+                            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                              <h5 className="font-semibold text-gray-800 mb-3 border-b pb-2 flex items-center gap-2">
+                                <Settings size={16} className="text-blue-500"/> Kết quả AS Score
+                              </h5>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-2 gap-x-4 text-sm">
+                                {selectedRecord.asScores && Object.entries(selectedRecord.asScores).map(([key, val]) => {
+                                   const mapName: any = {
+                                     binhHoa: 'Bình Hòa', duongHu: 'Dương Hư', amHu: 'Âm Hư', khiHu: 'Khí Hư',
+                                     damThap: 'Đàm Thấp', thapNhiet: 'Thấp Nhiệt', huyetU: 'Huyết Ứ', khiTre: 'Khí Trệ', dacBiet: 'Đặc Biệt'
+                                   };
+                                   const isHigh = key !== 'binhHoa' && (val as number) >= 30;
+                                   const isGood = key === 'binhHoa' && (val as number) >= 60;
+                                   
+                                   return (
+                                     <div key={key} className="flex justify-between items-center p-2 rounded bg-gray-50">
+                                       <span className="text-gray-600">{mapName[key]}</span>
+                                       <span className={`font-bold ${isHigh ? 'text-red-600' : isGood ? 'text-green-600' : 'text-gray-800'}`}>
+                                         {val}
+                                       </span>
+                                     </div>
+                                   );
+                                })}
+                              </div>
                             </div>
                           </div>
-                        </>
+                        </div>
                       ) : (
-                        <div className="flex-1 flex items-center justify-center text-gray-400 italic">Chọn hồ sơ để nhập liệu</div>
+                        <div className="flex items-center justify-center h-full text-gray-400">Chọn hồ sơ để nhập liệu</div>
                       )}
+                    </div>
+                  </div>
+                )}
+                {notification && <div className={`fixed bottom-6 right-6 px-6 py-3 rounded-lg shadow-xl text-white z-[60] ${notification.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>{notification.message}</div>}
+                
+                {showExportModal && (
+                  <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
+                      <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2 flex items-center gap-2">
+                        <Download className="text-emerald-600" /> Tùy chọn xuất CSV
+                      </h3>
+                      
+                      <div className="space-y-3 mb-6">
+                        {[
+                          { key: 'personalInfo', label: '1. Thông tin cá nhân' },
+                          { key: 'clinicalIndices', label: '2. Thông số lâm sàng (AS, EI, MI, RI) & Mất vết' },
+                          { key: 'redGreenDetails', label: '3. Chi tiết thông số màu (Red, Green)' },
+                          { key: 'surveyDetails', label: '4. Chi tiết 60 câu hỏi khảo sát' }
+                        ].map(item => (
+                          <label key={item.key} className="flex items-center gap-3 p-3 border rounded-xl hover:bg-emerald-50 hover:border-emerald-200 cursor-pointer transition-all shadow-sm">
+                            <input 
+                              type="checkbox" 
+                              className="w-5 h-5 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500"
+                              checked={(exportOptions as any)[item.key]}
+                              onChange={(e) => setExportOptions({...exportOptions, [item.key]: e.target.checked})}
+                            />
+                            <span className="text-sm font-semibold text-gray-700">{item.label}</span>
+                          </label>
+                        ))}
+                      </div>
+
+                      <div className="flex gap-3 justify-end">
+                        <Button variant="outline" onClick={() => setShowExportModal(false)}>Hủy</Button>
+                        <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => {
+                          generateCustomCSV(records, exportOptions);
+                          setShowExportModal(false);
+                        }}>
+                          <Download size={16} /> Tải CSV
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -328,27 +523,6 @@ export const AdminPanel: React.FC = () => {
           )}
         </div>
       </div>
-      
-      {showExportModal && (
-        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-xs shadow-2xl">
-            <h3 className="font-bold mb-4 text-center border-b pb-2">Xuất dữ liệu CSV</h3>
-            <div className="space-y-2 mb-6">
-              {[{k: 'personalInfo', l: 'Thông tin cá nhân'}, {k: 'clinicalIndices', l: 'Lâm sàng'}, {k: 'redGreenDetails', l: 'Red/Green'}, {k: 'surveyDetails', l: '60 Câu hỏi'}].map(opt => (
-                <label key={opt.k} className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-gray-50">
-                  <input type="checkbox" checked={(exportOptions as any)[opt.k]} onChange={(e) => setExportOptions({...exportOptions, [opt.k]: e.target.checked})} />
-                  <span className="text-xs">{opt.l}</span>
-                </label>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={() => setShowExportModal(false)} variant="outline" className="flex-1">Hủy</Button>
-              <Button onClick={() => { generateCustomCSV(records, exportOptions); setShowExportModal(false); }} className="flex-1 bg-emerald-600">Tải về</Button>
-            </div>
-          </div>
-        </div>
-      )}
-      {notification && <div className={`fixed bottom-6 right-6 px-4 py-2 rounded-lg shadow-xl text-white z-[110] ${notification.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>{notification.message}</div>}
     </div>
   );
 };
