@@ -7,7 +7,7 @@ import {
 } from '../services/storageService';
 import { calculateASScores, getHighestScores } from '../services/scoreService';
 import { calculateClinicalIndices } from '../services/indicesService'; 
-import { generateCustomCSV, ExportOptions } from '../services/csvService'; 
+import { generateCustomCSV, ExportOptions } from '../services/csvService';
 import { Button } from './Button';
 import { SurveyRecord, ClinicalData } from '../types';
 import { CCMQ_QUESTIONS, ANSWER_OPTIONS } from '../constants';
@@ -25,6 +25,10 @@ export const AdminPanel: React.FC = () => {
   const [records, setRecords] = useState<SurveyRecord[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // State quản lý bộ lọc
+  const [filterStatus, setFilterStatus] = useState<'all' | 'missing_time'>('all'); 
+  
   const [selectedRecord, setSelectedRecord] = useState<SurveyRecord | null>(null);
   const [editingClinicalData, setEditingClinicalData] = useState<ClinicalData | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
@@ -75,18 +79,16 @@ export const AdminPanel: React.FC = () => {
 
   useEffect(() => { if (isOpen && isAuthenticated) refreshData(); }, [dataSource]);
 
-  // --- CHỈNH SỬA: CHỈ NẠP DỮ LIỆU GỐC KHI CHỌN HỒ SƠ, KHÔNG CÓ CACHE NHÁP ---
+  // --- CHỈ NẠP DỮ LIỆU GỐC, ĐÃ XÓA TÍNH NĂNG GỌI NHÁP ĐỂ TRÁNH LỖI CACHE ---
   useEffect(() => {
     setSyncStatus('idle');
     if (selectedRecord) {
-        // Nạp bản sao dữ liệu lâm sàng từ hồ sơ đang chọn
-        setEditingClinicalData(JSON.parse(JSON.stringify(selectedRecord.clinicalData || {})));
+      // Nạp dữ liệu thẳng từ hồ sơ
+      setEditingClinicalData(JSON.parse(JSON.stringify(selectedRecord.clinicalData || {})));
     } else {
-        setEditingClinicalData(null);
+      setEditingClinicalData(null);
     }
-  }, [selectedRecord?.id]); // Chỉ chạy lại khi đổi ID hồ sơ
-
-  // (ĐÃ XÓA useEffect TỰ ĐỘNG LƯU NHÁP VÀO LOCALSTORAGE ĐỂ TRÁNH LỖI ĐÈ DỮ LIỆU)
+  }, [selectedRecord]);
 
   const handleLogin = (e: React.FormEvent) => { 
     e.preventDefault(); 
@@ -115,16 +117,16 @@ export const AdminPanel: React.FC = () => {
   const handleGenerateData = () => { if (confirm("Tạo hồ sơ giả?")) { generateTestData(); refreshData(); showNotification("Đã tạo Data giả!"); } };
 
   const handleSyncToCloud = async () => {
-    if (!selectedRecord || !editingClinicalData) return;
+    if (!selectedRecord) return;
     const url = getGoogleScriptUrl();
     if (!url) return alert("Chưa có URL!");
     setSyncStatus('syncing');
     
-    const recordToSync = { ...selectedRecord, clinicalData: editingClinicalData };
+    // Lấy dữ liệu đang nhập trên màn hình để gửi
+    const currentClinicalData = editingClinicalData || selectedRecord.clinicalData;
+    const recordToSync = { ...selectedRecord, clinicalData: currentClinicalData };
     if (!recordToSync.asScores) recordToSync.asScores = calculateASScores(recordToSync.surveyData);
-    
-    // Luôn lưu vào Local trước khi đồng bộ Cloud
-    saveRecord(recordToSync.profile, recordToSync.surveyData, editingClinicalData, recordToSync.asScores);
+    if (dataSource === 'local') saveRecord(recordToSync.profile, recordToSync.surveyData, currentClinicalData, recordToSync.asScores);
     
     const result = await syncRecordToCloud(recordToSync, url);
     if (result.success) { 
@@ -146,9 +148,14 @@ export const AdminPanel: React.FC = () => {
 
   const handleSaveClinicalData = async () => {
     if (selectedRecord && editingClinicalData) {
-        saveRecord(selectedRecord.profile, selectedRecord.surveyData, editingClinicalData, selectedRecord.asScores);
-        refreshData();
-        showNotification("Đã lưu Local!");
+      const updatedRecord = { ...selectedRecord, clinicalData: editingClinicalData };
+      if (dataSource === 'local') {
+          saveRecord(updatedRecord.profile, updatedRecord.surveyData, editingClinicalData, updatedRecord.asScores);
+          refreshData();
+          showNotification("Đã lưu Local!");
+      } else {
+          if(confirm("Lưu trực tiếp lên Cloud?")) handleSyncToCloud();
+      }
     }
   };
 
@@ -181,6 +188,7 @@ export const AdminPanel: React.FC = () => {
     return <span className="text-red-600 font-medium text-xs">{highest.slice(0, 1).join(', ')}</span>;
   };
 
+  // BÓC TÁCH DỮ LIỆU FILE CSV THÔNG MINH
   const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>, phase: 'pre' | 'postImmediate' | 'post10Min') => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -193,7 +201,7 @@ export const AdminPanel: React.FC = () => {
       const headerCells = lines[0].split(',').map(h => h.trim().replace(/["']/g, ""));
       const labelIndex = headerCells.findIndex(h => h === 'Label');
       const meanIndex = headerCells.findIndex(h => h === 'Mean');
-      if (labelIndex === -1 || meanIndex === -1) return showNotification('Không tìm thấy cột "Label" hoặc "Mean"!', 'error');
+      if (labelIndex === -1 || meanIndex === -1) return showNotification('Không tìm thấy cột "Label" hoặc "Mean" trong file CSV!', 'error');
 
       const reds: number[] = [];
       const greens: number[] = [];
@@ -227,14 +235,29 @@ export const AdminPanel: React.FC = () => {
         });
         showNotification(`Đã trích xuất thành công dữ liệu CSV!`, 'success');
       } else {
-        showNotification('File CSV không đủ 4 vùng dữ liệu Red/Green!', 'error');
+        showNotification('File CSV không đủ 4 vùng dữ liệu Red/Green (Tối thiểu 8 dòng)!', 'error');
       }
     };
     reader.readAsText(file);
     e.target.value = '';
   };
 
-  const filteredRecords = records.filter(r => r.profile.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || r.profile.patientCode.toLowerCase().includes(searchTerm.toLowerCase()));
+  // --- LỌC DỮ LIỆU AN TOÀN ---
+  const filteredRecords = (records || []).filter(r => {
+    const fullName = r.profile?.fullName || '';
+    const patientCode = r.profile?.patientCode || '';
+    const matchSearch = fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                        patientCode.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    let matchFilter = true;
+    if (filterStatus === 'missing_time') {
+      const time = r.clinicalData?.cuppingMarkTime;
+      matchFilter = !time || String(time).trim() === ''; 
+    }
+
+    return matchSearch && matchFilter;
+  });
+
   const totalPages = Math.max(1, Math.ceil(filteredRecords.length / recordsPerPage));
   const startIndex = (currentPage - 1) * recordsPerPage;
   const paginatedRecords = filteredRecords.slice(startIndex, startIndex + recordsPerPage);
@@ -277,15 +300,29 @@ export const AdminPanel: React.FC = () => {
                   <div className="flex h-full">
                     <div className={`${selectedRecord ? 'w-1/3 hidden md:flex' : 'w-full flex'} flex-col border-r border-gray-200 bg-white transition-all duration-300`}>
                        <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
-                         <div className="relative mb-2">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500" size={18} />
-                            <input 
-                                type="text" 
-                                placeholder="Tìm kiếm theo Tên hoặc Mã BN..." 
-                                className="w-full pl-10 pr-4 py-2.5 text-sm font-medium border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white shadow-sm transition-all placeholder-gray-400" 
-                                value={searchTerm} 
-                                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} 
-                            />
+                         
+                         <div className="flex flex-col xl:flex-row gap-2 mb-2">
+                           {/* Thanh Tìm kiếm */}
+                           <div className="relative flex-1">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500" size={18} />
+                              <input 
+                                  type="text" 
+                                  placeholder="Tìm Tên hoặc Mã BN..." 
+                                  className="w-full pl-10 pr-4 py-2 text-sm font-medium border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white shadow-sm transition-all placeholder-gray-400" 
+                                  value={searchTerm} 
+                                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} 
+                              />
+                           </div>
+                           
+                           {/* Hộp chọn Bộ lọc (Dropdown) */}
+                           <select 
+                             className="py-2 px-3 text-sm font-medium border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white shadow-sm text-gray-700 cursor-pointer xl:w-48"
+                             value={filterStatus}
+                             onChange={(e) => { setFilterStatus(e.target.value as any); setCurrentPage(1); }}
+                           >
+                             <option value="all">Tất cả hồ sơ</option>
+                             <option value="missing_time">⚠️ Thiếu TG Mất Vết</option>
+                           </select>
                          </div>
                          
                          <div className="flex flex-wrap gap-2">
@@ -363,7 +400,7 @@ export const AdminPanel: React.FC = () => {
                         <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
                           <div className="bg-white p-4 border-b border-gray-200 flex justify-between items-center shadow-sm shrink-0">
                              <div className="flex items-center gap-3"><button onClick={() => setSelectedRecord(null)} className="md:hidden p-2 -ml-2 text-gray-600"><ArrowLeft size={20} /></button><div><h2 className="text-lg font-bold text-gray-800">{selectedRecord.profile.fullName}</h2></div></div>
-                             <div className="flex gap-2"><Button onClick={handleSaveClinicalData} className="!py-1 !px-3 bg-blue-600"><Save size={14}/> Lưu</Button></div>
+                             <div className="flex gap-2"><Button onClick={handleSaveClinicalData} className="!py-1 !px-3 bg-blue-600"><Save size={14}/> Lưu Local</Button></div>
                           </div>
 
                           <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -470,6 +507,38 @@ export const AdminPanel: React.FC = () => {
                                 })}
                               </div>
                             </div>
+
+                            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                              <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                                <h5 className="font-semibold text-gray-800">Chi tiết 60 câu trả lời</h5>
+                                <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded border">
+                                  Đỏ: Thường xuyên (4) / Luôn luôn (5)
+                                </span>
+                              </div>
+                              <div className="divide-y divide-gray-100">
+                                {CCMQ_QUESTIONS.map(q => {
+                                  const ansVal = selectedRecord.surveyData[q.id];
+                                  const ansLabel = ANSWER_OPTIONS.find(o => o.value === ansVal)?.label || '-';
+                                  const isHigh = ansVal === 4 || ansVal === 5;
+                                  
+                                  return (
+                                    <div key={q.id} className={`p-3 text-sm flex gap-3 ${isHigh ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                                      <div className="w-8 shrink-0 text-gray-400 font-mono text-xs pt-0.5">#{q.id}</div>
+                                      <div className="flex-1 text-gray-700">{q.text}</div>
+                                      <div className="w-32 shrink-0 text-right">
+                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                          isHigh ? 'bg-red-100 text-red-700' : 
+                                          ansVal === 3 ? 'bg-yellow-100 text-yellow-700' : 
+                                          'bg-gray-100 text-gray-600'
+                                        }`}>
+                                          {ansLabel} ({ansVal})
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       ) : (
@@ -480,6 +549,7 @@ export const AdminPanel: React.FC = () => {
                 )}
                 {notification && <div className={`fixed bottom-6 right-6 px-6 py-3 rounded-lg shadow-xl text-white z-[60] ${notification.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`}>{notification.message}</div>}
                 
+                {/* --- BẢNG MODAL CHỌN TRƯỜNG DỮ LIỆU ĐỂ TẢI CSV --- */}
                 {showExportModal && (
                   <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md animate-in fade-in zoom-in-95">
